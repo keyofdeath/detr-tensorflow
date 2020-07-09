@@ -1,6 +1,6 @@
 # DEtection TRansformer Network (DETR) - Tensorflow
 
-Implementation of the **DETR** (**DE**tection **TR**ansformer) network (Carion, Nicolas, et al., 2020) in *Tensorflow*. 
+Implementation of the **DETR** (**DE**tection **TR**ansformer) network (Carion, Nicolas, et al., 2020) in *Tensorflow*.
 
 
 ## References
@@ -12,5 +12,6 @@ Implementation of the **DETR** (**DE**tection **TR**ansformer) network (Carion, 
 - [] Take `max_obj` into config
 - [] Include mask head to model for segmentation
 - [] Parameterize to handle images with variyng shape and paddings
+- [] Parameterize backbone config
 
 <img align="right" src="img/auvisus.svg" width="100" >
