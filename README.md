@@ -1,6 +1,6 @@
 # DEtection TRansformer Network (DETR) - Tensorflow
 
-Implementation of the **DETR** (**DE**tection **TR**ansformer) in *Tensorflow*. 
+Implementation of the **DETR** (**DE**tection **TR**ansformer) network (Carion, Nicolas, et al., 2020) in *Tensorflow*. 
 
 
 ## References
