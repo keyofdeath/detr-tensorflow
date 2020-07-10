@@ -35,6 +35,8 @@ storage_path/				# path/to/data_storage
 
 
 ### Execute Training
+
+#### Via Command Line
 You can easily start the training procedure from `detr_models/detr/` using:
 
 ```console
@@ -47,9 +49,11 @@ Additional parameters such as *epochs*, *batch_size* etc. can be set. Please tak
 python3 train.py --help
 ```
 
-
 If no additonal parameters are used, the defaults as specified in `detr_models/detr/config.py` will be used.
 
+#### Via Jupyter Notebook
+
+If you want to execute training (e.g. on a pre-trained model) or just get a quick overview over the model architecture, you can also use the jupyter notebook `DETR.ipynb` provided in `/notebooks`.
 
 ## To-DOs
 - [] Include tests to verify code
@@ -57,5 +61,7 @@ If no additonal parameters are used, the defaults as specified in `detr_models/d
 - [] Include mask head to model for segmentation
 - [] Parameterize to handle images with variyng shape and paddings
 - [] Parameterize backbone config
+- [] Include inference script
+- [] Include inference notebook
 
 <img align="right" src="img/auvisus.svg" width="100" >
