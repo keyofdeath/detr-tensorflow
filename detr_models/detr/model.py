@@ -5,13 +5,13 @@ import time
 import ipdb  # noqa: F401
 import numpy as np
 import tensorflow as tf
-from detectors.backbone.backbone import Backbone
-from detectors.detr.data_feeder import DataFeeder
-from detectors.detr.losses import bbox_loss, score_loss
-from detectors.detr.matcher import bipartite_matching
-from detectors.detr.utils import save_training_loss
-from detectors.detr.uuid_iterator import UUIDIterator
-from detectors.transformer.transformer import Transformer
+from detr_models.backbone.backbone import Backbone
+from detr_models.detr.data_feeder import DataFeeder
+from detr_models.detr.losses import bbox_loss, score_loss
+from detr_models.detr.matcher import bipartite_matching
+from detr_models.detr.utils import save_training_loss
+from detr_models.detr.uuid_iterator import UUIDIterator
+from detr_models.transformer.transformer import Transformer
 from tensorflow.keras import Model
 
 tf.keras.backend.set_floatx("float32")
@@ -151,7 +151,15 @@ class DETR:
 
         return Model([batch_input, positional_encodings], output_tensor, name="DETR")
 
-    def train(self, epochs, optimizer, batch_size, count_images):
+    def train(
+        self,
+        epochs,
+        optimizer,
+        batch_size,
+        count_images,
+        output_dir,
+        use_pretrained=None,
+    ):
         """Train the DETR Model.
 
         Parameters
@@ -164,6 +172,11 @@ class DETR:
             Number of samples per batch.
         count_images : int
             Number of total images used for training.
+        output_dir: str
+            Path used to save the final model weights and training loss.
+        use_pretrained : str, optional
+            Path to saved pre-trained model weights. Only used if specified and only
+            valid if the weights align with the chosen model config.
 
         Returns
         -------
@@ -176,6 +189,10 @@ class DETR:
         print("Build Model")
 
         model = self.build_model()
+
+        if use_pretrained:
+            print("Used pre-trained model weights\n", flush=True)
+            model.load_weights(use_pretrained)
 
         print("-------------------------------------------\n", flush=True)
         print(f"Start Training - Total of {epochs} Epochs:\n", flush=True)
@@ -219,7 +236,6 @@ class DETR:
 
                 batch_loss = [loss.numpy() for loss in batch_loss]
                 epoch_loss += (1 / len(batch_uuids)) * np.array(batch_loss)
-                print(batch_loss)
                 batch_iteration += 1
 
             detr_loss.append(epoch_loss)
@@ -233,8 +249,8 @@ class DETR:
         print("Done", flush=True)
 
         # Save training loss and model
-        model.save_weights("trained_models/detr_weights")
-        save_training_loss(detr_loss, "trained_models/detr_loss.txt")
+        model.save_weights("{}/detr_weights".format(output_dir))
+        save_training_loss(detr_loss, "{}/detr_loss.txt".format(output_dir))
 
         return detr_loss
 

@@ -4,8 +4,8 @@ Mostly taken from: https://www.tensorflow.org/tutorials/text/transformer#multi-h
 """
 
 import tensorflow as tf
-from detectors.transformer.decoder import TransformerDecoder
-from detectors.transformer.encoder import TransformerEncoder
+from detr_models.transformer.decoder import TransformerDecoder
+from detr_models.transformer.encoder import TransformerEncoder
 
 tf.keras.backend.set_floatx("float32")
 

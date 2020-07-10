@@ -5,8 +5,8 @@
 import ipdb  # noqa: F401
 import tensorflow as tf
 import tensorflow_addons as tfa
-from detectors.detr.config import DETRTrainingConfig
-from detectors.detr.utils import box_cxcywh_to_xyxy
+from detr_models.detr.config import DefaultDETRConfig
+from detr_models.detr.utils import box_cxcywh_to_xyxy
 from scipy.optimize import linear_sum_assignment
 
 
@@ -86,7 +86,7 @@ def prepare_cost_matrix(detr_scores, detr_bbox, batch_cls, batch_bbox):
         these get sliced to match only the considered sample.
     """
 
-    config = DETRTrainingConfig()
+    config = DefaultDETRConfig()
     batch_size = tf.shape(detr_scores)[0]
     num_queries = config.num_queries
     num_classes = config.num_classes + 1

@@ -4,7 +4,7 @@ Taken and adjusted from: https://www.tensorflow.org/tutorials/text/transformer#m
 """
 
 import tensorflow as tf
-from detectors.transformer.utils import scaled_dot_product_attention
+from detr_models.transformer.utils import scaled_dot_product_attention
 
 
 class MultiHeadAttention(tf.keras.layers.Layer):

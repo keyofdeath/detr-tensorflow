@@ -4,7 +4,7 @@ import ipdb  # noqa: F401
 import keras.backend as K
 import tensorflow as tf
 import tensorflow_addons as tfa
-from detectors.detr.utils import box_cxcywh_to_xyxy
+from detr_models.detr.utils import box_cxcywh_to_xyxy
 
 tf.keras.backend.set_floatx("float32")
 

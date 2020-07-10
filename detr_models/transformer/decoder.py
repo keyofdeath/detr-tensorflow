@@ -5,7 +5,7 @@ Taken and adjusted from: https://www.tensorflow.org/tutorials/text/transformer#m
 
 import ipdb  # noqa: F401
 import tensorflow as tf
-from detectors.transformer.attention import MultiHeadAttention
+from detr_models.transformer.attention import MultiHeadAttention
 
 
 class TransformerDecoder(tf.keras.layers.Layer):
