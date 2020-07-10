@@ -1,4 +1,5 @@
 import time
+import warnings
 
 # IPDB can be used for debugging.
 # Ignoring flake8 error code F401
@@ -13,6 +14,8 @@ from detr_models.detr.utils import save_training_loss
 from detr_models.detr.uuid_iterator import UUIDIterator
 from detr_models.transformer.transformer import Transformer
 from tensorflow.keras import Model
+
+warnings.filterwarnings("ignore")
 
 tf.keras.backend.set_floatx("float32")
 
@@ -202,7 +205,7 @@ class DETR:
         for epoch in range(epochs):
             start = time.time()
             print("-------------------------------------------", flush=True)
-            print(f"Beginning of Epoch: {epoch+1}\n", flush=True)
+            print(f"Epoch: {epoch+1}\n", flush=True)
 
             epoch_loss = np.array([0.0, 0.0, 0.0])
             batch_iteration = 0
@@ -210,10 +213,11 @@ class DETR:
             # Iterate over all batches
             for batch_uuids in self.uuiditerator(batch_size):
                 print(
-                    "Batch: {}/{} ".format(
+                    "Batch: {}/{}".format(
                         batch_iteration + 1, count_images // batch_size
                     ),
                     flush=True,
+                    end="\r",
                 )
 
                 (
@@ -245,8 +249,6 @@ class DETR:
             print("-------------------------------------------\n", flush=True)
 
         print("Finalize Training\n", flush=True)
-        print("-------------------------------------------\n", flush=True)
-        print("Done", flush=True)
 
         # Save training loss and model
         model.save_weights("{}/detr_weights".format(output_dir))
