@@ -16,6 +16,41 @@ We use the following packages:
 - numba 0.49.0
 
 
+
+## Start Training
+
+### Install Modules
+```console
+git clone https://github.com/auvisusAI/detr-tensorflow.git 			# Clone Repository
+cd detr-tensorflow/								# Change to dir
+pip3 install -e .								# Install repository and required packages
+```
+
+### Data Preparation
+```console
+storage_path/				# path/to/data_storage
+	labels/				#.txt files where each line corresponds to one object in image
+	images/				#.jpg files
+```
+
+
+### Execute Training
+You can easily start the training procedure from `detr_models/detr/` using:
+
+```console
+python3 train.py --storage_path <PATH> --output_dir <PATH> <Additional Parameters>
+```
+
+Additional parameters such as *epochs*, *batch_size* etc. can be set. Please take a look at the help text for a complete overview using:
+
+```console
+python3 train.py --help
+```
+
+
+If no additonal parameters are used, the defaults as specified in `detr_models/detr/config.py` will be used.
+
+
 ## To-DOs
 - [] Include tests to verify code
 - [] Take `max_obj` into config
