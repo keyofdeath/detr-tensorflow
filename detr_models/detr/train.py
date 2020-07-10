@@ -13,8 +13,6 @@ from tensorflow.keras.preprocessing.image import img_to_array, load_img
 tf.keras.backend.set_floatx("float32")
 config = DefaultDETRConfig()
 
-# os.environ['AUTOGRAPH_VERBOSITY'] = "1"
-
 
 def get_args_parser():
     parser = argparse.ArgumentParser(add_help=False)
