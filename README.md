@@ -59,8 +59,10 @@ If no additional parameters are used, the defaults as specified in `detr_models/
 
 If you want to execute training (e.g. on a pre-trained model) or just get a quick overview over the model architecture, you can also use the jupyter notebook `DETR.ipynb` provided in `/notebooks`.
 
+
 ## 4. To-DOs
-- [] Include tests to verify code
+- [] Adjust `data_feeder/loadlabel` to handle Coco annotations
+- [] Include unittests to verify code
 - [] Take `max_obj` into config
 - [] Include mask head to model for segmentation
 - [] Parameterize to handle images with varying shape and paddings
@@ -69,3 +71,8 @@ If you want to execute training (e.g. on a pre-trained model) or just get a quic
 - [] Include inference notebook
 
 <img align="right" src="img/auvisus.svg" width="100" >
+
+
+## 5. Help - We need somebody
+
+As you can see, there are still many open to-dos. We are happy for all contributions to improve this *Tensorflow* implementation.
