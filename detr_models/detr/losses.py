@@ -93,8 +93,9 @@ def score_loss(target, output, indices):
     balancing_weights = tf.tensor_scatter_nd_update(
         balancing_weights, out_indices, tf.ones_like(tgt_updates, dtype=tf.float32)
     )
+    norm = tf.cast(tf.shape(balancing_weights)[0], dtype=tf.float32)
 
-    return tf.tensordot(sample_loss, balancing_weights, 1)
+    return tf.tensordot(sample_loss, balancing_weights, 1) / norm
 
 
 @tf.function
