@@ -156,6 +156,7 @@ def init_training(args):
     detr = DETR(
         storage_path=args.storage_path,
         input_shape=input_shape,
+        batch_size=args.batch_size,
         num_queries=args.num_queries,
         num_classes=args.num_classes,
         num_heads=args.num_heads,

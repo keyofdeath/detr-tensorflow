@@ -24,6 +24,7 @@ class DataFeeder:
         num_classes: int,
         fm_shape: tuple,
         dim_transformer: int,
+        batch_size: int,
     ):
         """Initialize Data Feeder
 
@@ -47,6 +48,9 @@ class DataFeeder:
         self.num_classes = np.int32(num_classes)
         self.fm_shape = fm_shape
         self.dim_transformer = np.int32(dim_transformer)
+        self.positional_encodings = create_positional_encodings(
+            fm_shape=fm_shape, num_pos_feats=dim_transformer // 2, batch_size=batch_size
+        )
 
     def __call__(self, batch_uuids: list):
         """Call data feeder.
@@ -94,12 +98,13 @@ class DataFeeder:
         batch_cls = tf.convert_to_tensor(batch_cls, dtype=tf.float32)
         batch_bbox = tf.convert_to_tensor(batch_bbox, dtype=tf.float32)
 
-        positional_encodings = create_positional_encodings(
-            fm_shape=self.fm_shape,
-            num_pos_feats=self.dim_transformer // 2,
-            batch_size=batch_size,
+        return (
+            batch_inputs,
+            batch_cls,
+            batch_bbox,
+            obj_indices,
+            self.positional_encodings,
         )
-        return (batch_inputs, batch_cls, batch_bbox, obj_indices, positional_encodings)
 
     def load_data(self, batch_uuids: list):
         """Load the images and labels of the corresponding uuids.

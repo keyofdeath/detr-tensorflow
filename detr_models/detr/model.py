@@ -25,6 +25,7 @@ class DETR:
         self,
         storage_path,
         input_shape,
+        batch_size,
         num_queries,
         num_classes,
         num_heads,
@@ -87,7 +88,12 @@ class DETR:
         # Init Feeder and Iterator
         self.uuiditerator = UUIDIterator(storage_path)
         self.feeder = DataFeeder(
-            storage_path, num_queries, num_classes, self.fm_shape, dim_transformer
+            storage_path,
+            num_queries,
+            num_classes,
+            self.fm_shape,
+            dim_transformer,
+            batch_size,
         )
 
     def build_model(self):
@@ -315,6 +321,7 @@ def _train(
     return [detr_loss, score_loss, bbox_loss]
 
 
+@tf.function
 def calculate_score_loss(batch_cls, detr_scores, indices):
     """Helper function to calculate the score loss.
 
@@ -342,6 +349,7 @@ def calculate_score_loss(batch_cls, detr_scores, indices):
     return tf.reduce_sum(batch_score_loss)
 
 
+@tf.function
 def calculate_bbox_loss(batch_bbox, detr_bbox, indices):
     """Helper function to calculate the bounding box loss.
 
