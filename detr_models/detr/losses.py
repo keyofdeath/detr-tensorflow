@@ -102,7 +102,7 @@ def bbox_loss(
     target,
     output,
     indices,
-    bbox_cost_factor=tf.constant(5.0, dtype=tf.float32),
+    l1_cost_factor=tf.constant(5.0, dtype=tf.float32),
     iou_cost_factor=tf.constant(2.0, dtype=tf.float32),
 ):
     """Calculate bounding box loss.
@@ -117,7 +117,7 @@ def bbox_loss(
         Bipartite matching indices for the sample of shape [2, max_obj].
         Indicating the assignement between queries and objects. Note that `max_obj` is specified
         in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
-    bbox_cost_factor : tf.Tensor, optional
+    l1_cost_factor : tf.Tensor, optional
         Cost factor for L1-loss.
     iou_cost_factor : tf.Tensor, optional
         Cost factor for generalized IoU loss.
@@ -147,4 +147,4 @@ def bbox_loss(
         )
     )
 
-    return bbox_cost_factor * l1_loss + iou_cost_factor * giou_loss
+    return l1_cost_factor * l1_loss + iou_cost_factor * giou_loss

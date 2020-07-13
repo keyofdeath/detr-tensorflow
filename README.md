@@ -69,10 +69,12 @@ If you want to execute training (e.g. on a pre-trained model) or just get a quic
 - [] Parameterize backbone config
 - [] Include inference script
 - [] Include inference notebook
-
-<img align="right" src="img/auvisus.svg" width="100" >
+- [] Take `l1_cost_factor` and `iou_cost_factor` into config
 
 
 ## 5. Help - We need somebody
 
 As you can see, there are still many open to-dos. We are happy for all contributions to improve this *Tensorflow* implementation.
+
+
+<img align="right" src="img/auvisus.svg" width="100" >

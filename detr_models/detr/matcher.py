@@ -63,7 +63,14 @@ def tf_linear_sum_assignment(sample_cost_matrix, obj_indices, max_obj=tf.constan
 
 
 @tf.function
-def prepare_cost_matrix(detr_scores, detr_bbox, batch_cls, batch_bbox):
+def prepare_cost_matrix(
+    detr_scores,
+    detr_bbox,
+    batch_cls,
+    batch_bbox,
+    l1_cost_factor=tf.constant(5.0, dtype=tf.float32),
+    iou_cost_factor=tf.constant(2.0, dtype=tf.float32),
+):
     """Calculate the cost matrix of the given model outputs, required for the bipartite
     assignment between queries and objects.
 
@@ -77,6 +84,10 @@ def prepare_cost_matrix(detr_scores, detr_bbox, batch_cls, batch_bbox):
         Batch class targets of shape [Batch Size, #Queries, 1].
     batch_bbox : tf.Tensor
         Batch bounding box targets of shape [Batch Size, #Queries, 4].
+    l1_cost_factor : tf.Tensor, optional
+        Cost factor for L1-loss.
+    iou_cost_factor : tf.Tensor, optional
+        Cost factor for generalized IoU loss.
 
     Returns
     -------
@@ -133,16 +144,19 @@ def prepare_cost_matrix(detr_scores, detr_bbox, batch_cls, batch_bbox):
 
     # Calculate Bounding Box Matching Costs
     # L1 Loss
-    cost_bbox = tf.math.reduce_sum(tf.math.abs(out_bbox_xywh - obj_bboxes_xywh), 2)
-    # cost_bbox = tf.reshape(cost_bbox, shape=[batch_size * num_queries, num_objects])
+    cost_l1 = tf.math.reduce_sum(tf.math.abs(out_bbox_xywh - obj_bboxes_xywh), 2)
 
     # GIoU Loss
     giou_loss = tfa.losses.GIoULoss(reduction=tf.keras.losses.Reduction.NONE)
-    cost_giou = giou_loss(y_true=obj_bboxes_xyxy, y_pred=out_bbox_xyxy)
-    cost_giou = tf.reshape(cost_giou, shape=[batch_size * num_queries, num_objects])
+    cost_iou = giou_loss(y_true=obj_bboxes_xyxy, y_pred=out_bbox_xyxy)
+    cost_iou = tf.reshape(cost_iou, shape=[batch_size * num_queries, num_objects])
+
+    cost_bbox = (l1_cost_factor * cost_l1 + iou_cost_factor * cost_iou) / tf.cast(
+        num_objects, dtype=tf.float32
+    )
 
     # Combine to Cost Matrix
-    cost_matrix = cost_class + cost_bbox + cost_giou
+    cost_matrix = cost_class + cost_bbox
     cost_matrix = tf.reshape(cost_matrix, shape=[batch_size, num_queries, num_objects])
 
     return cost_matrix
