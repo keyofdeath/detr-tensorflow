@@ -294,10 +294,6 @@ def _train(
         Positional encodings of shape [Batch Size, H*W, dim_transformer].
         Used in transformer network to enrich input information.
     """
-    num_objects = tf.cast(tf.math.reduce_max(obj_indices), dtype=tf.float32)
-
-    if tf.math.equal(num_objects, 0):
-        num_objects = tf.constant(1.0, dtype=tf.float32)
 
     with tf.GradientTape() as gradient_tape:
         detr_scores, detr_bbox = detr(
@@ -309,9 +305,7 @@ def _train(
         )
 
         score_loss = calculate_score_loss(batch_cls, detr_scores, indices)
-
         bbox_loss = calculate_bbox_loss(batch_bbox, detr_bbox, indices)
-        bbox_loss = bbox_loss / num_objects
 
         detr_loss = score_loss + bbox_loss
 

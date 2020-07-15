@@ -58,7 +58,7 @@ def score_loss(target, output, indices):
     Returns
     -------
     tf.Tensor
-        Sample classification/score loss.
+        Sample classification/score loss. Averaged over number of queries.
     """
     num_queries = tf.shape(output)[0]
     num_classes = tf.shape(output)[1]
@@ -123,7 +123,7 @@ def bbox_loss(
     Returns
     -------
     tf.Tensor
-        Sample bounding box loss.
+        Sample mean bounding box loss. Averaged over number of objects in sample.
     """
 
     # Retrieve query and object idx
@@ -132,17 +132,15 @@ def bbox_loss(
     # Select Ordered Target/Output according to the hungarian matching
     ordered_target = tf.gather(target, object_idx)
     ordered_output = tf.gather(output, query_idx)
-
     # Calculate L1 Loss
-    l1_loss = tf.reduce_sum(tf.math.abs(ordered_target - ordered_output))
+    l1_loss = tf.reduce_sum(tf.math.abs(ordered_target - ordered_output), axis=1)
 
     # Calculate GIoU Loss
     giou_loss = tfa.losses.GIoULoss(reduction=tf.keras.losses.Reduction.NONE)
-    giou_loss = tf.reduce_sum(
-        giou_loss(
-            y_true=box_cxcywh_to_xyxy(ordered_target),
-            y_pred=box_cxcywh_to_xyxy(ordered_output),
-        )
+
+    giou_loss = giou_loss(
+        y_true=box_cxcywh_to_xyxy(ordered_target),
+        y_pred=box_cxcywh_to_xyxy(ordered_output),
     )
 
-    return l1_cost_factor * l1_loss + iou_cost_factor * giou_loss
+    return tf.reduce_mean(l1_cost_factor * l1_loss + iou_cost_factor * giou_loss)
