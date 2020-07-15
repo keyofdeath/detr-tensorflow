@@ -60,6 +60,8 @@ def score_loss(target, output, indices):
     tf.Tensor
         Sample classification/score loss.
     """
+    num_queries = tf.shape(output)[0]
+    num_classes = tf.shape(output)[1]
 
     # Retrieve query and object idx
     query_idx, object_idx = filter_sample_indices(indices)
@@ -70,11 +72,17 @@ def score_loss(target, output, indices):
 
     # Updates of Target
     tgt_updates = tf.gather(target, object_idx)
+    tgt_updates = tf.cast(tgt_updates, dtype=tf.int32)
+    tgt_updates = tf.one_hot(tgt_updates, depth=num_classes, dtype=tf.float32)
+    tgt_updates = tf.squeeze(tgt_updates, axis=1)
 
     # Placeholder filled with only 'non_object'
-    ordered_target_mask = tf.cast(
-        tf.fill(dims=target.shape, value=4.0), dtype=tf.float32
+    # Balance between positive and negative predcitions, as there are way
+    # more negative ones which would otherwise outweigh the result
+    fill_tensor = tf.expand_dims(
+        tf.one_hot(num_classes - 1, num_classes, on_value=0.1), 0
     )
+    ordered_target_mask = tf.repeat(fill_tensor, repeats=num_queries, axis=0)
 
     # Ordered output according to hungarian matching
     # The target values of the labels are inserted at the idx corresponding
@@ -83,19 +91,8 @@ def score_loss(target, output, indices):
         ordered_target_mask, out_indices, tgt_updates
     )
 
-    sample_loss = K.sparse_categorical_crossentropy(
-        target=ordered_target, output=output
-    )
-
-    # Balance between positive and negative predcitions, as there are way
-    # more negative ones which would otherwise outweigh the result
-    balancing_weights = tf.cast(tf.fill(dims=target.shape, value=0.1), dtype=tf.float32)
-    balancing_weights = tf.tensor_scatter_nd_update(
-        balancing_weights, out_indices, tf.ones_like(tgt_updates, dtype=tf.float32)
-    )
-    norm = tf.cast(tf.shape(balancing_weights)[0], dtype=tf.float32)
-
-    return tf.tensordot(sample_loss, balancing_weights, 1) / norm
+    sample_loss = K.categorical_crossentropy(target=ordered_target, output=output)
+    return tf.reduce_mean(sample_loss)
 
 
 @tf.function
