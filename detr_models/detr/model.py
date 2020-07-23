@@ -333,14 +333,14 @@ def calculate_score_loss(batch_cls, detr_scores, indices):
     Returns
     -------
     tf.Tensor
-        Batch score loss.
+        Average batch score loss.
     """
     batch_score_loss = tf.map_fn(
         lambda el: score_loss(*el),
         elems=[batch_cls, detr_scores, indices],
         dtype=tf.float32,
     )
-    return tf.reduce_sum(batch_score_loss)
+    return tf.reduce_mean(batch_score_loss)
 
 
 @tf.function
@@ -361,7 +361,7 @@ def calculate_bbox_loss(batch_bbox, detr_bbox, indices):
     Returns
     -------
     tf.Tensor
-        Batch bounding box loss
+        Average batch bounding box loss
     """
 
     batch_bbox_loss = tf.map_fn(
@@ -369,5 +369,4 @@ def calculate_bbox_loss(batch_bbox, detr_bbox, indices):
         elems=[batch_bbox, detr_bbox, indices],
         dtype=tf.float32,
     )
-
-    return tf.reduce_sum(batch_bbox_loss)
+    return tf.reduce_mean(batch_bbox_loss)
