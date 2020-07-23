@@ -102,6 +102,13 @@ def get_args_parser():
         action="store_true",
     )
 
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        help="Flag to indicate additional logging",
+        default=False,
+        action="store_true",
+    )
     return parser
 
 
@@ -177,6 +184,7 @@ def init_training(args):
         count_images=count_images,
         use_pretrained=args.use_pretrained,
         output_dir=args.output_dir,
+        verbose=args.verbose,
     )
 
 

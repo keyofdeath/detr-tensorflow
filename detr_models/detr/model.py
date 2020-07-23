@@ -168,6 +168,7 @@ class DETR:
         count_images,
         output_dir,
         use_pretrained=None,
+        verbose=False,
     ):
         """Train the DETR Model.
 
@@ -186,6 +187,7 @@ class DETR:
         use_pretrained : str, optional
             Path to saved pre-trained model weights. Only used if specified and only
             valid if the weights align with the chosen model config.
+        verbose : bool, optional
 
         Returns
         -------
@@ -218,31 +220,19 @@ class DETR:
 
             # Iterate over all batches
             for batch_uuids in self.uuiditerator(batch_size):
-                print(
-                    "Batch: {}/{}".format(
-                        batch_iteration + 1, count_images // batch_size
-                    ),
-                    flush=True,
-                    end="\r",
-                )
 
-                (
-                    batch_inputs,
-                    batch_cls,
-                    batch_bbox,
-                    obj_indices,
-                    positional_encodings,
-                ) = self.feeder(batch_uuids)
+                if verbose:
+                    print(
+                        "Batch: {}/{}".format(
+                            batch_iteration + 1, count_images // batch_size
+                        ),
+                        flush=True,
+                        end="\r",
+                    )
 
-                batch_loss = _train(
-                    detr=model,
-                    optimizer=optimizer,
-                    batch_inputs=batch_inputs,
-                    batch_cls=batch_cls,
-                    batch_bbox=batch_bbox,
-                    obj_indices=obj_indices,
-                    positional_encodings=positional_encodings,
-                )
+                input_data = self.feeder(batch_uuids)
+
+                batch_loss = _train(model, optimizer, *input_data)
 
                 batch_loss = [loss.numpy() for loss in batch_loss]
                 epoch_loss += (1 / len(batch_uuids)) * np.array(batch_loss)
