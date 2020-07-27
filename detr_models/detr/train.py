@@ -6,6 +6,7 @@ from pathlib import Path
 # Ignoring flake8 error code F401
 import ipdb  # noqa: F401
 import tensorflow as tf
+import tensorflow_addons as tfa
 from detr_models.detr.config import DefaultDETRConfig
 from detr_models.detr.model import DETR
 from tensorflow.keras.preprocessing.image import img_to_array, load_img
@@ -29,6 +30,9 @@ def get_args_parser():
 
     parser.add_argument(
         "-lr", "--learning_rate", default=config.learning_rate, type=float
+    )
+    parser.add_argument(
+        "-wd", "--weight_decay", default=config.weight_decay, type=float
     )
     parser.add_argument("-bs", "--batch_size", default=config.batch_size, type=int)
     parser.add_argument("-e", "--epochs", default=config.epochs, type=int)
@@ -175,7 +179,9 @@ def init_training(args):
         train_backbone=args.train_backbone,
     )
 
-    optimizer = tf.keras.optimizers.Adam(args.learning_rate)
+    optimizer = tfa.optimizers.AdamW(
+        weight_decay=args.weight_decay, learning_rate=args.learning_rate
+    )
 
     detr.train(
         epochs=args.epochs,

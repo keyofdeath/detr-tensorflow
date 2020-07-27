@@ -17,6 +17,7 @@ class DefaultDETRConfig:
         self.epochs = 150
         self.batch_size = 2
         self.learning_rate = 1e-4
+        self.weight_decay = 1e-4
 
         # Backbone Config
         self.backbone_name = "ResNet50"
