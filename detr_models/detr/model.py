@@ -110,6 +110,11 @@ class DETR:
         )
         feature_map = self.backbone(batch_input)
 
+        # Set backbone learning rate order of magnitude smaller
+        feature_map = (1 / 10) * feature_map + (1 - 1 / 10) * tf.stop_gradient(
+            feature_map
+        )
+
         transformer_input = tf.keras.layers.Conv2D(self.dim_transformer, kernel_size=1)(
             feature_map
         )
@@ -235,6 +240,7 @@ class DETR:
                 batch_loss = _train(model, optimizer, *input_data)
 
                 batch_loss = [loss.numpy() for loss in batch_loss]
+
                 epoch_loss += (1 / len(batch_uuids)) * np.array(batch_loss)
                 batch_iteration += 1
 
@@ -305,7 +311,6 @@ def _train(
     return [detr_loss, score_loss, bbox_loss]
 
 
-@tf.function
 def calculate_score_loss(batch_cls, detr_scores, indices):
     """Helper function to calculate the score loss.
 
@@ -333,7 +338,6 @@ def calculate_score_loss(batch_cls, detr_scores, indices):
     return tf.reduce_mean(batch_score_loss)
 
 
-@tf.function
 def calculate_bbox_loss(batch_bbox, detr_bbox, indices):
     """Helper function to calculate the bounding box loss.
 
