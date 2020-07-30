@@ -202,13 +202,15 @@ class DETR:
 
         print("-------------------------------------------", flush=True)
         print("-------------------------------------------\n", flush=True)
-        print("Build Model")
-
-        model = self.build_model()
 
         if use_pretrained:
-            print("Used pre-trained model weights\n", flush=True)
-            model.load_weights(use_pretrained)
+            print(
+                "Load pre-trained model from: {}\n".format(use_pretrained), flush=True
+            )
+            model = tf.keras.models.load_model(use_pretrained)
+        else:
+            print("Build model from scratch\n", flush=True)
+            model = self.build_model()
 
         print("-------------------------------------------\n", flush=True)
         print(f"Start Training - Total of {epochs} Epochs:\n", flush=True)
@@ -219,7 +221,6 @@ class DETR:
             start = time.time()
             print("-------------------------------------------", flush=True)
             print(f"Epoch: {epoch+1}\n", flush=True)
-
             epoch_loss = np.array([0.0, 0.0, 0.0])
             batch_iteration = 0
 
@@ -253,7 +254,7 @@ class DETR:
         print("Finalize Training\n", flush=True)
 
         # Save training loss and model
-        model.save_weights("{}/detr_weights".format(output_dir))
+        model.save("{}/detr_model".format(output_dir))
         save_training_loss(detr_loss, "{}/detr_loss.txt".format(output_dir))
 
         return detr_loss
