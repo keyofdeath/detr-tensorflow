@@ -15,11 +15,12 @@ Implementation of the **DETR** (**DE**tection **TR**ansformer) network (Carion, 
 We use the following packages:
 - python 3.7.3
 - tensorflow 2.1.0
+- tensorflow-addons 0.11.0.dev0 **(`*`)**
 - scipy 1.4.1
 - numpy 1.18.3
 - numba 0.49.0
 
-
+**(`*`)** You have to git clone and install this version from [here](https://github.com/tensorflow/addons.git). Required in order to allow the optimizer to handle weight decay schedules ([reference](https://github.com/tensorflow/addons/commit/b9f9ac5cc54c9c2169a8197d0d61adcb42b764e2)).
 
 ## 3. Start Training
 
@@ -29,6 +30,7 @@ git clone https://github.com/auvisusAI/detr-tensorflow.git 			# Clone Repository
 cd detr-tensorflow/								# Change to directory
 pip3 install -e .								# Install repository and required packages
 ```
+
 
 ### 3.B. Data Preparation
 ```console

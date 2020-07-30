@@ -14,9 +14,10 @@ class DefaultDETRConfig:
         self.num_heads = 8
 
         # Training Config
-        self.epochs = 150
+        self.epochs = 300
         self.batch_size = 2
         self.learning_rate = 1e-4
+        self.drops = [100, 200]
         self.weight_decay = 1e-4
 
         # Backbone Config
