@@ -1,5 +1,3 @@
-"""Summary
-"""
 # IPDB can be used for debugging.
 # Ignoring flake8 error code F401
 import ipdb  # noqa: F401
@@ -53,6 +51,7 @@ def tf_linear_sum_assignment(sample_cost_matrix, obj_indices, max_obj=tf.constan
 
     ind = tf.convert_to_tensor(ind, dtype=tf.int64)
     paddings = [[0, 0], [0, max_obj - tf.shape(ind)[1]]]
+
     return tf.pad(
         ind,
         paddings,
@@ -96,10 +95,10 @@ def prepare_cost_matrix(
         Note that the number of objects refers to the objects inside the batch. For the bipartite assignment,
         these get sliced to match only the considered sample.
     """
-
     config = DefaultDETRConfig()
     batch_size = tf.shape(detr_scores)[0]
     num_queries = config.num_queries
+    no_object_class = config.num_classes
     num_classes = config.num_classes + 1
 
     # Prepare Outputs
@@ -113,7 +112,9 @@ def prepare_cost_matrix(
     # Cls Costs
     # Objekt Klassen in Batch
     # [Class_Obj1, Class_Obj2, ...]
-    obj_classes = tf.gather_nd(batch_cls, tf.where(tf.not_equal(batch_cls, 4)))
+    obj_classes = tf.gather_nd(
+        batch_cls, tf.where(tf.not_equal(batch_cls, no_object_class))
+    )
     obj_classes = tf.cast(obj_classes, dtype=tf.int64)
     num_objects = tf.size(obj_classes)
     one = tf.constant(1, dtype=tf.int32)
@@ -127,7 +128,9 @@ def prepare_cost_matrix(
     # BBOX Costs
     # Objekt Bounding Boxes in Batch
     # [#Obj , #Coord]
-    obj_bboxes_xywh = tf.gather_nd(batch_bbox, tf.where(tf.not_equal(batch_bbox, 4)))
+    obj_bboxes_xywh = tf.gather_nd(
+        batch_bbox, tf.where(tf.not_equal(batch_bbox, no_object_class))
+    )
     obj_bboxes_xywh = tf.reshape(obj_bboxes_xywh, shape=[num_objects, 4])
     obj_bboxes_xyxy = box_cxcywh_to_xyxy(obj_bboxes_xywh)
 

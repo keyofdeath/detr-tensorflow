@@ -3,10 +3,10 @@
 import ipdb  # noqa: F401
 import numpy as np
 import tensorflow as tf
-from keras.preprocessing.image import img_to_array, load_img
 from numba import float32, int32, jit, njit, types
 from numba.typed import List
 from numpy import loadtxt
+from tensorflow.keras.preprocessing.image import img_to_array, load_img
 
 
 class DataFeeder:
@@ -91,7 +91,7 @@ class DataFeeder:
             batch_cls.append(sample_cls)
             batch_bbox.append(sample_bbox)
 
-        obj_indices = retrieve_obj_indices(np.array(batch_cls))
+        obj_indices = retrieve_obj_indices(np.array(batch_cls), self.num_classes)
         obj_indices = tf.ragged.constant(obj_indices, dtype=tf.int64)
 
         batch_inputs = tf.convert_to_tensor(batch_inputs, dtype=tf.float32)
@@ -219,7 +219,7 @@ def labels_to_targets(sample_labels, num_queries, num_classes):
 
 
 @njit
-def retrieve_obj_indices(batch_cls):
+def retrieve_obj_indices(batch_cls, num_classes):
     """Helper function to save the object indices for later.
     E.g. a batch of 3 samples with varying number of objects (1, 3, 1) will
     produce a mapping [[0], [1,2,3], [4]]. This will be needed later on in the
@@ -229,6 +229,8 @@ def retrieve_obj_indices(batch_cls):
     ----------
     batch_cls : np.array
         Batch class targets of shape [Batch Size, #Queries, 1].
+    num_classes : int
+        Number of target classes.
 
     Returns
     -------
@@ -241,7 +243,7 @@ def retrieve_obj_indices(batch_cls):
 
     for idx in np.arange(0, batch_size, dtype=np.int32):
         sample = batch_cls[idx]
-        object_indices = np.where(sample != 4.0)[0]
+        object_indices = np.where(sample != num_classes)[0]
         num_objects_in_sample = len(object_indices)
 
         if idx == 0:

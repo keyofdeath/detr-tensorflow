@@ -4,7 +4,9 @@ class DefaultDETRConfig:
         # Number of Predictions per Image
         self.num_queries = 100
 
-        # Number of Classes
+        # Number of Classes in the dataset
+        # Please note that the actual numbering of the classes
+        # should start at zero e.g. 0, 1, 2, 3 in the default case.
         self.num_classes = 4
 
         # Transformer Config
