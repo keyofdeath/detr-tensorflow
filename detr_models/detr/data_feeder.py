@@ -43,7 +43,7 @@ class DataFeeder:
             Should be a multiple of `num_heads`.
         """
         self.name = "DataFeeder"
-        self.path = storage_path
+        self.storage_path = storage_path
         self.num_queries = np.int32(num_queries)
         self.num_classes = np.int32(num_classes)
         self.fm_shape = fm_shape
@@ -150,7 +150,7 @@ class DataFeeder:
             Image of shape [H, W]
 
         """
-        image_path = "{}/images/{}.jpg".format(self.path, uuid)
+        image_path = "{}/images/{}.jpg".format(self.storage_path, uuid)
         return img_to_array(load_img(image_path), dtype=np.float32)
 
     def loadlabel(self, uuid: str):
@@ -169,7 +169,7 @@ class DataFeeder:
             Labels of shape [#Objects, 5]
         """
 
-        label_path = "{}/labels/{}.txt".format(self.path, uuid)
+        label_path = "{}/labels/{}.txt".format(self.storage_path, uuid)
         labels = loadtxt(label_path, comments="#", delimiter=" ", unpack=False)
         if labels.ndim == 1:
             return labels.reshape((1, 5))

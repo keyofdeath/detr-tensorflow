@@ -7,11 +7,9 @@ import ipdb  # noqa: F401
 import numpy as np
 import tensorflow as tf
 from detr_models.backbone.backbone import Backbone
-from detr_models.detr.data_feeder import DataFeeder
 from detr_models.detr.losses import bbox_loss, score_loss
 from detr_models.detr.matcher import bipartite_matching
 from detr_models.detr.utils import save_training_loss
-from detr_models.detr.uuid_iterator import UUIDIterator
 from detr_models.transformer.transformer import Transformer
 from tensorflow.keras import Model
 
@@ -23,9 +21,7 @@ tf.keras.backend.set_floatx("float32")
 class DETR:
     def __init__(
         self,
-        storage_path,
         input_shape,
-        batch_size,
         num_queries,
         num_classes,
         num_heads,
@@ -40,8 +36,6 @@ class DETR:
 
         Parameters
         ----------
-        storage_path : str
-            Path to images.
         input_shape : tuple
             Specification of model input [H, W, C].
         num_queries : int
@@ -66,7 +60,6 @@ class DETR:
         """
 
         # Save object parameters
-        self.storage_path = storage_path
         self.input_shape = input_shape
         self.num_queries = num_queries
         self.num_classes = num_classes
@@ -83,17 +76,6 @@ class DETR:
         self.positional_encodings_shape = (
             self.fm_shape[0] * self.fm_shape[1],
             dim_transformer,
-        )
-
-        # Init Feeder and Iterator
-        self.uuiditerator = UUIDIterator(storage_path)
-        self.feeder = DataFeeder(
-            storage_path,
-            num_queries,
-            num_classes,
-            self.fm_shape,
-            dim_transformer,
-            batch_size,
         )
 
     def build_model(self):
@@ -165,33 +147,28 @@ class DETR:
 
         return Model([batch_input, positional_encodings], output_tensor, name="DETR")
 
-    def train(
-        self,
-        epochs,
-        optimizer,
-        batch_size,
-        count_images,
-        output_dir,
-        use_pretrained=None,
-        verbose=False,
-    ):
+    def train(self, training_config, uuid_iterator, data_feeder, verbose=False):
         """Train the DETR Model.
 
         Parameters
         ----------
-        epochs : int
-            Number of training epochs.
-        optimizer : tf.Optimizer
-            Any chosen optimizer used for training.
-        batch_size : int
-            Number of samples per batch.
-        count_images : int
-            Number of total images used for training.
-        output_dir: str
-            Path used to save the final model weights and training loss.
-        use_pretrained : str, optional
-            Path to saved pre-trained model weights. Only used if specified and only
-            valid if the weights align with the chosen model config.
+        training_config : dict
+            Contains the training configuration:
+                {
+                    epochs: int
+                        Number of epochs.
+                    optimizer : tf.Optimizer
+                        Any chosen optimizer used for training.
+                    count_images : int
+                        Number of total images used for training.
+                    output_dir: str
+                        Path used to save the final model weights and training loss.
+                    use_pretrained : str, optional
+                        Path to saved pre-trained model weights. Only used if specified and only
+                        valid if the weights align with the chosen model config.
+                }
+        uuid_iterator : detr_models.detr.uuid_iterator.UUIDIterator
+        data_feeder : detr_models.detr.data_feeder.DataFeeder
         verbose : bool, optional
 
         Returns
@@ -203,21 +180,27 @@ class DETR:
         print("-------------------------------------------", flush=True)
         print("-------------------------------------------\n", flush=True)
 
-        if use_pretrained:
+        if training_config["use_pretrained"]:
             print(
-                "Load pre-trained model from: {}\n".format(use_pretrained), flush=True
+                "Load pre-trained model from: {}\n".format(
+                    training_config["use_pretrained"]
+                ),
+                flush=True,
             )
-            model = tf.keras.models.load_model(use_pretrained)
+            model = tf.keras.models.load_model(training_config["use_pretrained"])
         else:
             print("Build model from scratch\n", flush=True)
             model = self.build_model()
 
         print("-------------------------------------------\n", flush=True)
-        print(f"Start Training - Total of {epochs} Epochs:\n", flush=True)
+        print(
+            "Start Training - Total of {} Epochs:\n".format(training_config["epochs"]),
+            flush=True,
+        )
 
         detr_loss = []
 
-        for epoch in range(epochs):
+        for epoch in range(training_config["epochs"]):
             start = time.time()
             print("-------------------------------------------", flush=True)
             print(f"Epoch: {epoch+1}\n", flush=True)
@@ -225,20 +208,21 @@ class DETR:
             batch_iteration = 0
 
             # Iterate over all batches
-            for batch_uuids in self.uuiditerator(batch_size):
+            for batch_uuids in uuid_iterator():
 
                 if verbose:
                     print(
                         "Batch: {}/{}".format(
-                            batch_iteration + 1, count_images // batch_size
+                            batch_iteration + 1,
+                            training_config["count_images"] // uuid_iterator.batch_size,
                         ),
                         flush=True,
                         end="\r",
                     )
 
-                input_data = self.feeder(batch_uuids)
+                input_data = data_feeder(batch_uuids)
 
-                batch_loss = _train(model, optimizer, *input_data)
+                batch_loss = _train(model, training_config["optimizer"], *input_data)
 
                 batch_loss = [loss.numpy() for loss in batch_loss]
 
@@ -254,8 +238,10 @@ class DETR:
         print("Finalize Training\n", flush=True)
 
         # Save training loss and model
-        model.save("{}/detr_model".format(output_dir))
-        save_training_loss(detr_loss, "{}/detr_loss.txt".format(output_dir))
+        model.save("{}/detr_model".format(training_config["output_dir"]))
+        save_training_loss(
+            detr_loss, "{}/detr_loss.txt".format(training_config["output_dir"])
+        )
 
         return detr_loss
 
