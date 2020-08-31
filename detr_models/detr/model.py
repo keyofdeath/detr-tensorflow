@@ -147,29 +147,18 @@ class DETR:
 
         return Model([batch_input, positional_encodings], output_tensor, name="DETR")
 
-    def train(self, training_config, uuid_iterator, data_feeder, verbose=False):
+    def train(self, training_config, optimizer, count_images, data_feeder):
         """Train the DETR Model.
 
         Parameters
         ----------
         training_config : dict
             Contains the training configuration:
-                {
-                    epochs: int
-                        Number of epochs.
-                    optimizer : tf.Optimizer
-                        Any chosen optimizer used for training.
-                    count_images : int
-                        Number of total images used for training.
-                    output_dir: str
-                        Path used to save the final model weights and training loss.
-                    use_pretrained : str, optional
-                        Path to saved pre-trained model weights. Only used if specified and only
-                        valid if the weights align with the chosen model config.
-                }
-        uuid_iterator : detr_models.detr.uuid_iterator.UUIDIterator
+        optimizer : tf.Optimizer
+            Any chosen optimizer used for training.
+        count_images : int
+            Number of total images used for training.
         data_feeder : detr_models.detr.data_feeder.DataFeeder
-        verbose : bool, optional
 
         Returns
         -------
@@ -208,25 +197,14 @@ class DETR:
             batch_iteration = 0
 
             # Iterate over all batches
-            for batch_uuids in uuid_iterator():
+            for input_data in data_feeder(training_config["verbose"]):
 
-                if verbose:
-                    print(
-                        "Batch: {}/{}".format(
-                            batch_iteration + 1,
-                            training_config["count_images"] // uuid_iterator.batch_size,
-                        ),
-                        flush=True,
-                        end="\r",
-                    )
+                batch_loss = _train(model, optimizer, *input_data)
 
-                input_data = data_feeder(batch_uuids)
+                batch_loss = np.array([loss.numpy() for loss in batch_loss])
 
-                batch_loss = _train(model, training_config["optimizer"], *input_data)
+                epoch_loss = epoch_loss + batch_loss
 
-                batch_loss = [loss.numpy() for loss in batch_loss]
-
-                epoch_loss += (1 / len(batch_uuids)) * np.array(batch_loss)
                 batch_iteration += 1
 
             detr_loss.append(epoch_loss)

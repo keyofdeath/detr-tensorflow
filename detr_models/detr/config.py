@@ -24,3 +24,6 @@ class DefaultDETRConfig:
 
         # Backbone Config
         self.backbone_name = "ResNet50"
+        self.train_backbone = True
+
+        self.train_masks = False

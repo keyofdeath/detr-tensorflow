@@ -3,6 +3,8 @@
 import ipdb  # noqa: F401
 import numpy as np
 import tensorflow as tf
+from detr_models.data_feeder.uuid_iterator import UUIDIterator
+from detr_models.detr.utils import progress_bar
 from numba import float32, int32, jit, njit, types
 from numba.typed import List
 from numpy import loadtxt
@@ -10,12 +12,7 @@ from tensorflow.keras.preprocessing.image import img_to_array, load_img
 
 
 class DataFeeder:
-    """Helper Class to provide the DETR model with the training data
-    in the required shapes.
-
-    Receives the image uuids of each batch and returns the corresponding input and
-    target data.
-    """
+    """Helper Class to provide the DETR model with the training data in the required shapes."""
 
     def __init__(
         self,
@@ -51,9 +48,35 @@ class DataFeeder:
         self.positional_encodings = create_positional_encodings(
             fm_shape=fm_shape, num_pos_feats=dim_transformer // 2, batch_size=batch_size
         )
+        self.uuid_iterator = UUIDIterator(
+            storage_path=storage_path, batch_size=batch_size
+        )
 
-    def __call__(self, batch_uuids: list):
-        """Call data feeder.
+    def __call__(self, verbose: bool):
+        """Yield batch input for DETR model.
+
+        Parameters
+        ----------
+        verbose : bool
+            Indicating extended logging with progress_bar.
+
+        Yields
+        ------
+        input_data : list
+            Input data for DETR model as specified in `prepare_inputs()`.
+        """
+
+        batches = self.uuid_iterator()
+        number_batches = len(batches)
+        for batch_iteration, batch_uuids in enumerate(batches):
+            input_data = self.prepare_inputs(batch_uuids)
+            yield input_data
+
+            if verbose:
+                progress_bar(total=number_batches, current=batch_iteration + 1)
+
+    def prepare_inputs(self, batch_uuids: list):
+        """Prepare input data for DETR.
 
         Parameters
         ----------

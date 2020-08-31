@@ -1,129 +1,18 @@
-import argparse
 import os
-from pathlib import Path
 
 # IPDB can be used for debugging.
 # Ignoring flake8 error code F401
 import ipdb  # noqa: F401
 import tensorflow as tf
 import tensorflow_addons as tfa
+from detr_models.data_feeder.data_feeder import DataFeeder
 from detr_models.detr.config import DefaultDETRConfig
-from detr_models.detr.data_feeder import DataFeeder
 from detr_models.detr.model import DETR
-from detr_models.detr.uuid_iterator import UUIDIterator
 from tensorflow.keras.preprocessing.image import img_to_array, load_img
 
 tf.keras.backend.set_floatx("float32")
-config = DefaultDETRConfig()
 
-
-def get_args_parser():
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument(
-        "-sp", "--storage_path", help="Path to data storage", type=str, required=True
-    )
-    parser.add_argument(
-        "-o",
-        "--output_dir",
-        help="Path to store weights and losses",
-        default=os.path.join(os.getcwd(), "training_results"),
-        type=str,
-    )
-
-    parser.add_argument(
-        "-lr", "--learning_rate", default=config.learning_rate, type=float
-    )
-    parser.add_argument(
-        "-wd", "--weight_decay", default=config.weight_decay, type=float
-    )
-    parser.add_argument(
-        "-d",
-        "--drops",
-        help="Learning rate and weight decay drop after epochs.",
-        nargs="+",
-        default=config.drops,
-    )
-
-    parser.add_argument("-bs", "--batch_size", default=config.batch_size, type=int)
-    parser.add_argument("-e", "--epochs", default=config.epochs, type=int)
-
-    parser.add_argument(
-        "-up", "--use_pretrained", help="Path to pre-trained model weights.", type=str
-    )
-
-    parser.add_argument(
-        "-nq",
-        "--num_queries",
-        help="Number of queries used in transformer",
-        default=config.num_queries,
-        type=int,
-    )
-    parser.add_argument(
-        "-nc",
-        "--num_classes",
-        help="Number of classes in classification",
-        default=config.num_classes,
-        type=int,
-    )
-    parser.add_argument(
-        "-nh",
-        "--num_heads",
-        help="Number of heads in transformer",
-        default=config.num_heads,
-        type=int,
-    )
-    parser.add_argument(
-        "-ntl",
-        "--num_transformer_layer",
-        help="Number of transformer layers",
-        default=config.num_transformer_layer,
-        type=int,
-    )
-
-    parser.add_argument(
-        "-dt",
-        "--dim_transformer",
-        help="Number of transformer units",
-        default=config.dim_transformer,
-        type=int,
-    )
-    parser.add_argument(
-        "-df",
-        "--dim_feedforward",
-        help="Number of feed forwards neurons in transformer",
-        default=config.dim_feedforward,
-        type=int,
-    )
-
-    parser.add_argument(
-        "-bn",
-        "--backbone_name",
-        help="Name of backbone to use",
-        default=config.backbone_name,
-        type=str,
-        choices=["ResNet50", "MobileNetV2", "InceptionV3"],
-    )
-    parser.add_argument(
-        "-tb",
-        "--train_backbone",
-        help="Flag to indicate training of backbone",
-        action="store_true",
-    )
-    parser.add_argument(
-        "-gpu",
-        "--use_gpu",
-        help="Flag to indicate training on a GPU",
-        action="store_true",
-    )
-
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        help="Flag to indicate additional logging",
-        default=False,
-        action="store_true",
-    )
-    return parser
+model_config = DefaultDETRConfig()
 
 
 def get_image_information(storage_path: str):
@@ -181,20 +70,20 @@ def get_decay_schedules(num_steps: int, lr: float, drops: list, weight_decay: fl
     return lr_schedule, wd_schedule
 
 
-def init_training(args):
+def init_training(training_config: dict):
     """Initialize DETR training procedure
 
     Parameters
     ----------
-    args : argparse.Namespace
-        Arguments given to the program execution
+    training_config : dictionary
+        Configuration used for training.
     """
-    if args.use_gpu:
+    if training_config["use_gpu"]:
         assert tf.config.list_physical_devices("GPU"), "No GPU available"
         assert tf.test.is_built_with_cuda(), "Tensorflow not compiled with CUDA support"
 
     # Get image input shape and number of images in path
-    input_shape, count_images = get_image_information(args.storage_path)
+    input_shape, count_images = get_image_information(training_config["storage_path"])
 
     # Init Backbone Config
     backbone_config = {
@@ -206,63 +95,40 @@ def init_training(args):
     # Init RPN Model
     detr = DETR(
         input_shape=input_shape,
-        num_queries=args.num_queries,
-        num_classes=args.num_classes,
-        num_heads=args.num_heads,
-        dim_transformer=args.dim_transformer,
-        dim_feedforward=args.dim_feedforward,
-        num_transformer_layer=args.num_transformer_layer,
-        backbone_name=args.backbone_name,
+        num_queries=model_config.num_queries,
+        num_classes=model_config.num_classes,
+        num_heads=model_config.num_heads,
+        dim_transformer=model_config.dim_transformer,
+        dim_feedforward=model_config.dim_feedforward,
+        num_transformer_layer=model_config.num_transformer_layer,
+        train_backbone=model_config.train_backbone,
+        backbone_name=model_config.backbone_name,
         backbone_config=backbone_config,
-        train_backbone=args.train_backbone,
-    )
-
-    # Init Feeder and Iterator
-    uuid_iterator = UUIDIterator(
-        storage_path=args.storage_path, batch_size=args.batch_size
     )
 
     data_feeder = DataFeeder(
-        storage_path=args.storage_path,
-        num_queries=args.num_queries,
-        num_classes=args.num_classes,
+        storage_path=training_config["storage_path"],
+        batch_size=training_config["batch_size"],
         fm_shape=detr.fm_shape,
-        dim_transformer=args.dim_transformer,
-        batch_size=args.batch_size,
+        num_queries=model_config.num_queries,
+        num_classes=model_config.num_classes,
+        dim_transformer=model_config.dim_transformer,
     )
 
-    num_steps = count_images // args.batch_size
     lr_schedule, wd_schedule = get_decay_schedules(
-        num_steps, args.learning_rate, args.drops, args.weight_decay
+        num_steps=count_images // training_config["batch_size"],
+        lr=model_config.learning_rate,
+        drops=model_config.drops,
+        weight_decay=model_config.weight_decay,
     )
 
     optimizer = tfa.optimizers.AdamW(
         weight_decay=wd_schedule, learning_rate=lr_schedule
     )
 
-    training_config = {
-        "epochs": args.epochs,
-        "optimizer": optimizer,
-        "count_images": count_images,
-        "use_pretrained": args.use_pretrained,
-        "output_dir": args.output_dir,
-    }
-
     detr.train(
         training_config=training_config,
-        uuid_iterator=uuid_iterator,
+        optimizer=optimizer,
+        count_images=count_images,
         data_feeder=data_feeder,
-        verbose=args.verbose,
     )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        "DETR training script", parents=[get_args_parser()]
-    )
-    args = parser.parse_args()
-
-    if args.output_dir:
-        Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-
-    init_training(args)

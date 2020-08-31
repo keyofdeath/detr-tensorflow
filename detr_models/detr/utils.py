@@ -87,3 +87,17 @@ def box_cxcywh_to_xyxy(bboxes):
         xyxy = xyxy.write(idx, sample)
 
     return xyxy.stack()
+
+
+def progress_bar(total: int, current: int):
+    """Helper function to plot progress bar."""
+    percentage = int((current / total) * 100)
+
+    if percentage != 0:
+        pstr = "Progress: "
+
+        for _ in range(0, percentage // 10):
+            pstr = "{}{}".format(pstr, "-")
+
+        pstr = "{} {}%".format(pstr, percentage)
+        print(pstr, end="\r", flush=True)
