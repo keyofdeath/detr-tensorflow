@@ -8,7 +8,9 @@ import ipdb  # noqa: F401
 import tensorflow as tf
 import tensorflow_addons as tfa
 from detr_models.detr.config import DefaultDETRConfig
+from detr_models.detr.data_feeder import DataFeeder
 from detr_models.detr.model import DETR
+from detr_models.detr.uuid_iterator import UUIDIterator
 from tensorflow.keras.preprocessing.image import img_to_array, load_img
 
 tf.keras.backend.set_floatx("float32")
@@ -203,9 +205,7 @@ def init_training(args):
 
     # Init RPN Model
     detr = DETR(
-        storage_path=args.storage_path,
         input_shape=input_shape,
-        batch_size=args.batch_size,
         num_queries=args.num_queries,
         num_classes=args.num_classes,
         num_heads=args.num_heads,
@@ -217,6 +217,20 @@ def init_training(args):
         train_backbone=args.train_backbone,
     )
 
+    # Init Feeder and Iterator
+    uuid_iterator = UUIDIterator(
+        storage_path=args.storage_path, batch_size=args.batch_size
+    )
+
+    data_feeder = DataFeeder(
+        storage_path=args.storage_path,
+        num_queries=args.num_queries,
+        num_classes=args.num_classes,
+        fm_shape=detr.fm_shape,
+        dim_transformer=args.dim_transformer,
+        batch_size=args.batch_size,
+    )
+
     num_steps = count_images // args.batch_size
     lr_schedule, wd_schedule = get_decay_schedules(
         num_steps, args.learning_rate, args.drops, args.weight_decay
@@ -226,13 +240,18 @@ def init_training(args):
         weight_decay=wd_schedule, learning_rate=lr_schedule
     )
 
+    training_config = {
+        "epochs": args.epochs,
+        "optimizer": optimizer,
+        "count_images": count_images,
+        "use_pretrained": args.use_pretrained,
+        "output_dir": args.output_dir,
+    }
+
     detr.train(
-        epochs=args.epochs,
-        optimizer=optimizer,
-        batch_size=args.batch_size,
-        count_images=count_images,
-        use_pretrained=args.use_pretrained,
-        output_dir=args.output_dir,
+        training_config=training_config,
+        uuid_iterator=uuid_iterator,
+        data_feeder=data_feeder,
         verbose=args.verbose,
     )
 
