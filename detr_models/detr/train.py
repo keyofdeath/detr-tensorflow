@@ -5,7 +5,8 @@ import os
 import ipdb  # noqa: F401
 import tensorflow as tf
 import tensorflow_addons as tfa
-from detr_models.data_feeder.data_feeder import DataFeeder
+from detr_models.data_feeder.coco_feeder import COCOFeeder
+from detr_models.data_feeder.pvoc_feeder import PVOCFeeder
 from detr_models.detr.config import DefaultDETRConfig
 from detr_models.detr.model import DETR
 from tensorflow.keras.preprocessing.image import img_to_array, load_img
@@ -15,13 +16,15 @@ tf.keras.backend.set_floatx("float32")
 model_config = DefaultDETRConfig()
 
 
-def get_image_information(storage_path: str):
+def get_image_information(storage_path: str, data_type: str):
     """Helper function to retrieve image information.
 
     Parameters
     ----------
     storage_path : str
-        Path to data storage
+        Path to data storage.
+    data_type : str
+        Model configuration specifying data_type (`PVOC` or `COCO`).
 
     Returns
     -------
@@ -36,7 +39,12 @@ def get_image_information(storage_path: str):
     count_images = len(images)
 
     sample_image = img_to_array(load_img("{}/{}".format(image_path, images[0])))
-    input_shape = sample_image.shape
+
+    if data_type == "PVOC":
+        input_shape = sample_image.shape
+    elif data_type == "COCO":
+        input_shape = (model_config.image_height, model_config.image_width, 3)
+
     return input_shape, count_images
 
 
@@ -82,8 +90,15 @@ def init_training(training_config: dict):
         assert tf.config.list_physical_devices("GPU"), "No GPU available"
         assert tf.test.is_built_with_cuda(), "Tensorflow not compiled with CUDA support"
 
+    if model_config.data_type not in ["PVOC", "COCO"]:
+        raise ValueError(
+            "Invalid `data_type` specified in Config: {}".format(model_config.data_type)
+        )
+
     # Get image input shape and number of images in path
-    input_shape, count_images = get_image_information(training_config["storage_path"])
+    input_shape, count_images = get_image_information(
+        training_config["storage_path"], model_config.data_type
+    )
 
     # Init Backbone Config
     backbone_config = {
@@ -106,14 +121,24 @@ def init_training(training_config: dict):
         backbone_config=backbone_config,
     )
 
-    data_feeder = DataFeeder(
-        storage_path=training_config["storage_path"],
-        batch_size=training_config["batch_size"],
-        fm_shape=detr.fm_shape,
-        num_queries=model_config.num_queries,
-        num_classes=model_config.num_classes,
-        dim_transformer=model_config.dim_transformer,
-    )
+    if model_config.data_type == "PVOC":
+        print("Use Input Data in PascalVOC format")
+        data_feeder = PVOCFeeder(
+            storage_path=training_config["storage_path"],
+            batch_size=training_config["batch_size"],
+            num_queries=model_config.num_queries,
+            num_classes=model_config.num_classes,
+        )
+    else:
+        print("Use Input Data in COCO format")
+        data_feeder = COCOFeeder(
+            storage_path=training_config["storage_path"],
+            batch_size=training_config["batch_size"],
+            num_queries=model_config.num_queries,
+            num_classes=model_config.num_classes,
+            image_width=model_config.image_width,
+            image_height=model_config.image_height,
+        )
 
     lr_schedule, wd_schedule = get_decay_schedules(
         num_steps=count_images // training_config["batch_size"],

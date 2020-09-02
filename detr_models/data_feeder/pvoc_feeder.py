@@ -11,17 +11,11 @@ from numpy import loadtxt
 from tensorflow.keras.preprocessing.image import img_to_array, load_img
 
 
-class DataFeeder:
+class PVOCFeeder:
     """Helper Class to provide the DETR model with the training data in the required shapes."""
 
     def __init__(
-        self,
-        storage_path: str,
-        num_queries: int,
-        num_classes: int,
-        fm_shape: tuple,
-        dim_transformer: int,
-        batch_size: int,
+        self, storage_path: str, num_queries: int, num_classes: int, batch_size: int
     ):
         """Initialize Data Feeder
 
@@ -33,21 +27,11 @@ class DataFeeder:
             Number of queries used in transformer network.
         num_classes : int
             Number of target classes.
-        fm_shape : tuple
-            Shape of feature map used to create positional encodings [H,W].
-        dim_transformer : int
-            Number of neurons in multi-head attention layers.
-            Should be a multiple of `num_heads`.
         """
-        self.name = "DataFeeder"
+        self.name = "PVOCFeeder"
         self.storage_path = storage_path
         self.num_queries = np.int32(num_queries)
         self.num_classes = np.int32(num_classes)
-        self.fm_shape = fm_shape
-        self.dim_transformer = np.int32(dim_transformer)
-        self.positional_encodings = create_positional_encodings(
-            fm_shape=fm_shape, num_pos_feats=dim_transformer // 2, batch_size=batch_size
-        )
         self.uuid_iterator = UUIDIterator(
             storage_path=storage_path, batch_size=batch_size
         )
@@ -94,9 +78,6 @@ class DataFeeder:
         obj_indices : tf.RaggedTensor
             Helper tensor of shape [Batch Size, None].
             Used to link objects in the cost matrix to the target tensors.
-        positional_encodings : tf.Tensor
-            Positional encodings of shape [Batch Size, H*W, dim_transformer].
-            Used in transformer network to enrich input information.
         """
         batch_inputs, batch_labels = self.load_data(batch_uuids)
 
@@ -121,13 +102,7 @@ class DataFeeder:
         batch_cls = tf.convert_to_tensor(batch_cls, dtype=tf.float32)
         batch_bbox = tf.convert_to_tensor(batch_bbox, dtype=tf.float32)
 
-        return (
-            batch_inputs,
-            batch_cls,
-            batch_bbox,
-            obj_indices,
-            self.positional_encodings,
-        )
+        return (batch_inputs, batch_cls, batch_bbox, obj_indices)
 
     def load_data(self, batch_uuids: list):
         """Load the images and labels of the corresponding uuids.
@@ -280,56 +255,3 @@ def retrieve_obj_indices(batch_cls, num_classes):
             last_num_objects = upto
 
     return obj_indices
-
-
-def create_positional_encodings(fm_shape, num_pos_feats, batch_size):
-    """Helper function to create the positional encodings used in the
-    transformer network of sinus type.
-
-    Parameters
-    ----------
-    fm_shape : tuple
-        Shape of feature map used to create positional encodings [H,W].
-    num_pos_feats : int
-        Number of dimensions to express each position in. As both the x and y
-        coordinate is expressed in `num_pos_feats` dimensions and then added,
-        this number should be 0.5 * dim_transformer.
-    batch_size : int
-
-    Returns
-    -------
-    tf.Tensor
-            Positional encodings of shape [Batch Size, H*W, dim_transformer].
-            Used in transformer network to enrich input information.
-    """
-    height, width, c = fm_shape
-
-    y_embed = np.repeat(np.arange(1, height + 1), width).reshape(height, width)
-    x_embed = np.full(shape=(height, width), fill_value=np.arange(1, width + 1))
-
-    # d/2 entries for each dimension x and y
-    div_term = np.arange(num_pos_feats)
-    div_term = 10000 ** (2 * (div_term // 2) / num_pos_feats)
-    pos_x = x_embed[:, :, None] / div_term
-    pos_y = y_embed[:, :, None] / div_term
-
-    pos_x_even = np.sin(pos_x[:, :, 0::2])
-    pos_x_uneven = np.sin(pos_x[:, :, 1::2])
-
-    pos_y_even = np.sin(pos_y[:, :, 0::2])
-    pos_y_uneven = np.sin(pos_y[:, :, 1::2])
-
-    pos_x = np.concatenate([pos_x_even, pos_x_uneven], axis=2)
-    pos_y = np.concatenate([pos_y_even, pos_y_uneven], axis=2)
-
-    positional_encodings = np.concatenate([pos_y, pos_x], axis=2)
-    positional_encodings = np.expand_dims(positional_encodings, 0)
-    positional_encodings = np.repeat(positional_encodings, batch_size, axis=0)
-
-    positional_encodings = tf.convert_to_tensor(positional_encodings, dtype=tf.float32)
-    positional_encodings = tf.reshape(
-        positional_encodings,
-        shape=(batch_size, height * width, positional_encodings.shape[3]),
-    )
-
-    return positional_encodings

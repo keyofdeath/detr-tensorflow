@@ -1,5 +1,8 @@
 class DefaultDETRConfig:
     def __init__(self):
+        # Specify Data Type
+        # Currently only COCO or PVOC
+        self.data_type = "COCO"
 
         # Number of Predictions per Image
         self.num_queries = 100
@@ -11,13 +14,13 @@ class DefaultDETRConfig:
 
         # Transformer Config
         self.dim_transformer = 256
-        self.dim_feedforward = 2048
-        self.num_transformer_layer = 6
+        self.dim_feedforward = 1024
+        self.num_transformer_layer = 2
         self.num_heads = 8
 
         # Training Config
         self.epochs = 300
-        self.batch_size = 2
+        self.batch_size = 1
         self.learning_rate = 1e-4
         self.drops = [100, 200]
         self.weight_decay = 1e-4
@@ -27,3 +30,8 @@ class DefaultDETRConfig:
         self.train_backbone = True
 
         self.train_masks = False
+
+        # Height and Width of Image after rescaling
+        # Only Supporeted for `data_type` COCO
+        self.image_height = 270
+        self.image_width = 480

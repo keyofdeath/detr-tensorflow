@@ -1,0 +1,7 @@
+numpy
+voluptuous
+Pillow
+tensorflow
+keras
+tensorflow_addons
+pycocotools

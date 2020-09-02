@@ -89,6 +89,59 @@ def box_cxcywh_to_xyxy(bboxes):
     return xyxy.stack()
 
 
+def create_positional_encodings(fm_shape, num_pos_feats, batch_size):
+    """Helper function to create the positional encodings used in the
+    transformer network of sinus type.
+
+    Parameters
+    ----------
+    fm_shape : tuple
+        Shape of feature map used to create positional encodings [H,W].
+    num_pos_feats : int
+        Number of dimensions to express each position in. As both the x and y
+        coordinate is expressed in `num_pos_feats` dimensions and then added,
+        this number should be 0.5 * dim_transformer.
+    batch_size : int
+
+    Returns
+    -------
+    tf.Tensor
+            Positional encodings of shape [Batch Size, H*W, dim_transformer].
+            Used in transformer network to enrich input information.
+    """
+    height, width, c = fm_shape
+
+    y_embed = np.repeat(np.arange(1, height + 1), width).reshape(height, width)
+    x_embed = np.full(shape=(height, width), fill_value=np.arange(1, width + 1))
+
+    # d/2 entries for each dimension x and y
+    div_term = np.arange(num_pos_feats)
+    div_term = 10000 ** (2 * (div_term // 2) / num_pos_feats)
+    pos_x = x_embed[:, :, None] / div_term
+    pos_y = y_embed[:, :, None] / div_term
+
+    pos_x_even = np.sin(pos_x[:, :, 0::2])
+    pos_x_uneven = np.sin(pos_x[:, :, 1::2])
+
+    pos_y_even = np.sin(pos_y[:, :, 0::2])
+    pos_y_uneven = np.sin(pos_y[:, :, 1::2])
+
+    pos_x = np.concatenate([pos_x_even, pos_x_uneven], axis=2)
+    pos_y = np.concatenate([pos_y_even, pos_y_uneven], axis=2)
+
+    positional_encodings = np.concatenate([pos_y, pos_x], axis=2)
+    positional_encodings = np.expand_dims(positional_encodings, 0)
+    positional_encodings = np.repeat(positional_encodings, batch_size, axis=0)
+
+    positional_encodings = tf.convert_to_tensor(positional_encodings, dtype=tf.float32)
+    positional_encodings = tf.reshape(
+        positional_encodings,
+        shape=(batch_size, height * width, positional_encodings.shape[3]),
+    )
+
+    return positional_encodings
+
+
 def progress_bar(total: int, current: int):
     """Helper function to plot progress bar."""
     percentage = int((current / total) * 100)

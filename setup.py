@@ -1,18 +1,8 @@
-from distutils.core import setup
-
-INSTALL_REQUIRES = [
-    "pandas",
-    "numpy",
-    "pre-commit",
-    "voluptuous",
-    "pathlib",
-    "argparse",
-]
+from setuptools import find_packages, setup
 
 setup(
     name="DETR-Tensorflow",
     version="1.0",
     author="Auvisus GmbH",
-    packages=["detr_models.detr", "detr_models.backbone", "detr_models.transformer"],
-    install_requires=INSTALL_REQUIRES,
+    packages=find_packages(),
 )

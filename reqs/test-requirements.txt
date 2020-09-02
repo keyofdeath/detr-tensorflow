@@ -1,0 +1,4 @@
+py.test
+pycocotools
+pre-commit
+ipdb

@@ -9,7 +9,7 @@ import tensorflow as tf
 from detr_models.backbone.backbone import Backbone
 from detr_models.detr.losses import bbox_loss, score_loss
 from detr_models.detr.matcher import bipartite_matching
-from detr_models.detr.utils import save_training_loss
+from detr_models.detr.utils import create_positional_encodings, save_training_loss
 from detr_models.transformer.transformer import Transformer
 from tensorflow.keras import Model
 
@@ -139,6 +139,7 @@ class DETR:
         cls_pred = tf.keras.layers.Dense(
             units=self.num_classes + 1, activation="softmax"
         )(transformer_output)
+
         bbox_pred = tf.keras.layers.Dense(units=4, activation="sigmoid")(
             transformer_output
         )
@@ -158,7 +159,9 @@ class DETR:
             Any chosen optimizer used for training.
         count_images : int
             Number of total images used for training.
-        data_feeder : detr_models.detr.data_feeder.DataFeeder
+        data_feeder : detr_models.detr.data_feeder
+            DataFeeder object used for training. Currently, we supprt a data feeder taking
+            input data of PascalVOC and COCO type.
 
         Returns
         -------
@@ -189,6 +192,12 @@ class DETR:
 
         detr_loss = []
 
+        positional_encodings = create_positional_encodings(
+            fm_shape=self.fm_shape,
+            num_pos_feats=self.dim_transformer // 2,
+            batch_size=training_config["batch_size"],
+        )
+
         for epoch in range(training_config["epochs"]):
             start = time.time()
             print("-------------------------------------------", flush=True)
@@ -199,7 +208,15 @@ class DETR:
             # Iterate over all batches
             for input_data in data_feeder(training_config["verbose"]):
 
-                batch_loss = _train(model, optimizer, *input_data)
+                batch_loss = _train(
+                    detr=model,
+                    optimizer=optimizer,
+                    batch_inputs=input_data[0],
+                    batch_cls=input_data[1],
+                    batch_bbox=input_data[2],
+                    obj_indices=input_data[3],
+                    positional_encodings=positional_encodings,
+                )
 
                 batch_loss = np.array([loss.numpy() for loss in batch_loss])
 
