@@ -6,7 +6,7 @@ tf.keras.backend.set_floatx("float32")
 
 
 class Backbone:
-    def __init__(self, backbone_name, config):
+    def __init__(self, backbone_name, config, return_intermediate=False):
         """Initialize Backbone Model. You can choose between MobileNetV2,ResNet50
         and InceptionV3.
 
@@ -49,6 +49,34 @@ class Backbone:
 
         self.model.layers[-1]._name = "feature_map"
 
-        self.model = Model(
-            self.model.input, self.model.layers[-1].output, name="Backbone"
-        )
+        output = get_output_layers(self.model.layers, return_intermediate)
+        self.model = Model(self.model.input, output, name="Backbone")
+
+
+def get_output_layers(layers: list, return_intermediate: bool):
+    """Retrieve the backbone output to return for DETR.
+
+    Parameters
+    ----------
+    layers : list
+        Backbone layers.
+    return_intermediate : bool
+        Flag indicating whether intermediate layers should be returned.
+
+    Returns
+    -------
+    list
+        List of tf.Layers to be returned from backbone.
+    """
+    if return_intermediate:
+        layer_names = [
+            "conv1_relu",
+            "conv2_block3_out",
+            "conv3_block4_out",
+            "feature_map",
+        ]
+    else:
+        layer_names = ["feature_map"]
+
+    layer_idxs = [idx for idx, layer in enumerate(layers) if layer.name in layer_names]
+    return [layers[idx].output for idx in layer_idxs]

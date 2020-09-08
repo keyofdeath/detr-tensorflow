@@ -143,3 +143,60 @@ def bbox_loss(
     )
 
     return tf.reduce_mean(l1_cost_factor * l1_loss + iou_cost_factor * giou_loss)
+
+
+@tf.function
+def calculate_dice_loss(target: tf.Tensor, output: tf.Tensor):
+    """Calculate dice loss for batch.
+
+    Parameters
+    ----------
+    target : tf.Tensor
+        Target masks in batch of shape [#Objects, H * W].
+    output : tf.Tensor
+        Predicted masks in batch of shape [#Objects, H * W].
+
+    Returns
+    -------
+    float
+        Dice loss averaged by the number of objects in batch.
+    """
+    numerator = 2 * tf.reduce_sum(output * target, axis=1)
+    denominator = tf.reduce_sum(target, axis=1) + tf.reduce_sum(output, axis=1)
+
+    dice_loss = 1 - (numerator + 1) / (denominator + 1)
+
+    return tf.reduce_mean(dice_loss)
+
+
+@tf.function
+def calculate_focal_loss(
+    target: tf.Tensor, output: tf.Tensor, alpha: float = 0.25, gamma: float = 2.0
+):
+    """Calculate focal loss as introduced in https://arxiv.org/pdf/1708.02002.pdf.
+
+    Parameters
+    ----------
+    target : tf.Tensor
+        Target masks in batch of shape [#Objects, H * W].
+    output : tf.Tensor
+        Predicted masks in batch of shape [#Objects, H * W].
+    alpha : float, optional
+        Weighting factor to balance positive and negative examples.
+    gamma : float, optional
+        Exponent of modulating factor (1 - p_t) to balance easy vs. hard examples.
+
+    Returns
+    -------
+    TYPE
+        Description
+    """
+    bce = K.binary_crossentropy(target, output)
+    p_t = output * target + (1 - output) * (1 - target)
+    focal_loss = bce * ((1 - p_t) ** gamma)
+
+    if alpha > 0:
+        alpha_t = alpha * target + (1 - alpha) * (1 - target)
+        focal_loss = alpha_t * focal_loss
+
+    return tf.reduce_mean(focal_loss)

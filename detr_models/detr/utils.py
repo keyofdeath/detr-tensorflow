@@ -1,10 +1,16 @@
 """Helper functions that can be used within the RPN module
 """
 import pickle
+import os
 
 import ipdb  # noqa: F401
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras.preprocessing.image import img_to_array, load_img
+
+from detr_models.detr.config import DefaultDETRConfig
+
+model_config = DefaultDETRConfig()
 
 
 def save_training_loss(rpn_loss: list, path: str):
@@ -138,6 +144,68 @@ def create_positional_encodings(fm_shape, num_pos_feats, batch_size):
     )
 
     return positional_encodings
+
+
+def get_image_information(storage_path: str, data_type: str):
+    """Helper function to retrieve image information.
+
+    Parameters
+    ----------
+    storage_path : str
+        Path to data storage.
+    data_type : str
+        Model configuration specifying data_type (`PVOC` or `COCO`).
+
+    Returns
+    -------
+    input_shape : tuple
+        Input shape of images [H, W, C]
+    count_images : int
+        Number of images stored in `storage_path`
+    """
+
+    image_path = "{}/{}".format(storage_path, "images")
+    images = os.listdir(image_path)
+    count_images = len(images)
+
+    sample_image = img_to_array(load_img("{}/{}".format(image_path, images[0])))
+
+    if data_type == "PVOC":
+        input_shape = sample_image.shape
+    elif data_type == "COCO":
+        input_shape = (model_config.image_height, model_config.image_width, 3)
+
+    return input_shape, count_images
+
+
+def get_decay_schedules(num_steps: int, lr: float, drops: list, weight_decay: float):
+    """Helper function to create learning rate and weight decay schedules.
+
+    Parameters
+    ----------
+    num_steps : int
+        Number of training steps per epoch.
+    lr : float
+        Learning rate at beginning.
+    drops : list
+        Epochs after which lr and wd should drop.
+    weight_decay : float
+        Weight decay multiplier.
+
+    Returns
+    -------
+    tf.optimizer.schedules, tf.optimizer.schedules
+        Learning rate and weight decay schedules.
+    """
+    boundaries = [drop * num_steps for drop in drops]
+    lr_values = [lr] + [lr / (10 ** (idx + 1)) for idx, _ in enumerate(drops)]
+    wd_values = [weight_decay * lr for lr in lr_values]
+
+    lr_schedule = tf.optimizers.schedules.PiecewiseConstantDecay(boundaries, lr_values)
+
+    wd_schedule = tf.optimizers.schedules.PiecewiseConstantDecay(boundaries, wd_values)
+
+    return lr_schedule, wd_schedule
 
 
 def progress_bar(total: int, current: int):

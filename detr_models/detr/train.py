@@ -1,159 +1,224 @@
-import os
-
 # IPDB can be used for debugging.
 # Ignoring flake8 error code F401
 import ipdb  # noqa: F401
 import tensorflow as tf
-import tensorflow_addons as tfa
-from detr_models.data_feeder.coco_feeder import COCOFeeder
-from detr_models.data_feeder.pvoc_feeder import PVOCFeeder
-from detr_models.detr.config import DefaultDETRConfig
-from detr_models.detr.model import DETR
-from tensorflow.keras.preprocessing.image import img_to_array, load_img
-
-tf.keras.backend.set_floatx("float32")
-
-model_config = DefaultDETRConfig()
+from detr_models.detr.matcher import bipartite_matching
+from detr_models.detr.losses import (
+    bbox_loss,
+    score_loss,
+    calculate_dice_loss,
+    calculate_focal_loss,
+)
 
 
-def get_image_information(storage_path: str, data_type: str):
-    """Helper function to retrieve image information.
+@tf.function
+def train_base_model(
+    detr,
+    optimizer,
+    batch_inputs,
+    batch_cls,
+    batch_bbox,
+    obj_indices,
+    positional_encodings,
+):
+    """Train step of the DETR network.
 
     Parameters
     ----------
-    storage_path : str
-        Path to data storage.
-    data_type : str
-        Model configuration specifying data_type (`PVOC` or `COCO`).
+    detr : tf.Model
+        Detection Transformer (DETR) Model without segmentation head.
+    optimizer : tf.Optimizer
+        Any chosen optimizer used for training.
+    batch_inputs : tf.Tensor
+        Batch input images of shape [Batch Size, H, W, C].
+    batch_cls : tf.Tensor
+        Batch class targets of shape [Batch Size, #Queries, 1].
+    batch_bbox : tf.Tensor
+        Batch bounding box targets of shape [Batch Size, #Queries, 4].
+    obj_indices : tf.RaggedTensor
+        Helper tensor of shape [Batch Size, None].
+        Used to link objects in the cost matrix to the target tensors.
+    positional_encodings : tf.Tensor
+        Positional encodings of shape [Batch Size, H*W, dim_transformer].
+        Used in transformer network to enrich input information.
+    """
+
+    with tf.GradientTape() as gradient_tape:
+        detr_scores, detr_bbox = detr(
+            [batch_inputs, positional_encodings], training=True
+        )
+
+        indices = bipartite_matching(
+            detr_scores, detr_bbox, batch_cls, batch_bbox, obj_indices
+        )
+
+        score_loss = tf.constant(10.0) * calculate_score_loss(
+            batch_cls, detr_scores, indices
+        )
+        bbox_loss = calculate_bbox_loss(batch_bbox, detr_bbox, indices)
+
+        detr_loss = score_loss + bbox_loss
+
+        gradients = gradient_tape.gradient(detr_loss, detr.trainable_variables)
+        gradients = [
+            tf.clip_by_norm(gradient, tf.constant(0.1)) for gradient in gradients
+        ]
+        optimizer.apply_gradients(zip(gradients, detr.trainable_variables))
+
+    return [detr_loss, score_loss, bbox_loss]
+
+
+# @tf.function
+def train_segmentation_model(
+    detr,
+    optimizer,
+    batch_inputs,
+    batch_cls,
+    batch_bbox,
+    batch_masks,
+    obj_indices,
+    positional_encodings,
+):
+    """Train step of the DETR network.
+
+    Parameters
+    ----------
+    detr : tf.Model
+        Detection Transformer (DETR) Model including the segmentation head.
+    optimizer : tf.Optimizer
+        Any chosen optimizer used for training.
+    batch_inputs : tf.Tensor
+        Batch input images of shape [Batch Size, H, W, C].
+    batch_cls : tf.Tensor
+        Batch class targets of shape [Batch Size, #Queries, 1].
+    batch_bbox : tf.Tensor
+        Batch bounding box targets of shape [Batch Size, #Queries, 4].
+    obj_indices : tf.RaggedTensor
+        Helper tensor of shape [Batch Size, None].
+        Used to link objects in the cost matrix to the target tensors.
+    positional_encodings : tf.Tensor
+        Positional encodings of shape [Batch Size, H*W, dim_transformer].
+        Used in transformer network to enrich input information.
+    """
+
+    with tf.GradientTape() as gradient_tape:
+        detr_scores, detr_bbox, detr_masks = detr(
+            [batch_inputs, positional_encodings], training=True
+        )
+
+        indices = bipartite_matching(
+            detr_scores, detr_bbox, batch_cls, batch_bbox, obj_indices
+        )
+
+        score_loss = tf.constant(10.0) * calculate_score_loss(
+            batch_cls, detr_scores, indices
+        )
+        bbox_loss = calculate_bbox_loss(batch_bbox, detr_bbox, indices)
+
+        mask_loss = calculate_mask_loss(batch_masks, detr_masks, indices)
+
+        detr_loss = score_loss + bbox_loss + mask_loss
+
+        gradients = gradient_tape.gradient(detr_loss, detr.trainable_variables)
+        gradients = [
+            tf.clip_by_norm(gradient, tf.constant(0.1)) for gradient in gradients
+        ]
+        optimizer.apply_gradients(zip(gradients, detr.trainable_variables))
+
+    return [detr_loss, score_loss, bbox_loss]
+
+
+def calculate_score_loss(batch_cls, detr_scores, indices):
+    """Helper function to calculate the score loss.
+
+    Parameters
+    ----------
+    batch_cls : tf.Tensor
+        Batch class targets of shape [Batch Size, #Queries, 1].
+    detr_scores : tf.Tensor
+        Batch detr score outputs of shape [Batch Size. #Queries, #Classes + 1].
+    indices : tf.Tensor
+        Bipartite matching indices of shape [Batch Size, 2, max_obj].
+        Indicating the assignement between queries and objects in each sample. Note that `max_obj` is
+        specified in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
 
     Returns
     -------
-    input_shape : tuple
-        Input shape of images [H, W, C]
-    count_images : int
-        Number of images stored in `storage_path`
+    tf.Tensor
+        Average batch score loss.
     """
-
-    image_path = "{}/{}".format(storage_path, "images")
-    images = os.listdir(image_path)
-    count_images = len(images)
-
-    sample_image = img_to_array(load_img("{}/{}".format(image_path, images[0])))
-
-    if data_type == "PVOC":
-        input_shape = sample_image.shape
-    elif data_type == "COCO":
-        input_shape = (model_config.image_height, model_config.image_width, 3)
-
-    return input_shape, count_images
+    batch_score_loss = tf.map_fn(
+        lambda el: score_loss(*el),
+        elems=[batch_cls, detr_scores, indices],
+        dtype=tf.float32,
+    )
+    return tf.reduce_mean(batch_score_loss)
 
 
-def get_decay_schedules(num_steps: int, lr: float, drops: list, weight_decay: float):
-    """Helper function to create learning rate and weight decay schedules.
+def calculate_bbox_loss(batch_bbox, detr_bbox, indices):
+    """Helper function to calculate the bounding box loss.
 
     Parameters
     ----------
-    num_steps : int
-        Number of training steps per epoch.
-    lr : float
-        Learning rate at beginning.
-    drops : list
-        Epochs after which lr and wd should drop.
-    weight_decay : float
-        Weight decay multiplier.
+    batch_bbox : tf.Tensor
+        Batch bounding box targets of shape [Batch Size, #Queries, 4].
+    detr_bbox : tf.Tensor
+        Batch detr bounding box outputs of shape [Batch Size. #Queries, 4].
+    indices : tf.Tensor
+        Bipartite matching indices of shape [Batch Size, 2, max_obj].
+        Indicating the assignement between queries and objects in each sample. Note that `max_obj` is
+        specified in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
 
     Returns
     -------
-    tf.optimizer.schedules, tf.optimizer.schedules
-        Learning rate and weight decay schedules.
+    tf.Tensor
+        Average batch bounding box loss
     """
-    boundaries = [drop * num_steps for drop in drops]
-    lr_values = [lr] + [lr / (10 ** (idx + 1)) for idx, _ in enumerate(drops)]
-    wd_values = [weight_decay * lr for lr in lr_values]
 
-    lr_schedule = tf.optimizers.schedules.PiecewiseConstantDecay(boundaries, lr_values)
-
-    wd_schedule = tf.optimizers.schedules.PiecewiseConstantDecay(boundaries, wd_values)
-
-    return lr_schedule, wd_schedule
+    batch_bbox_loss = tf.map_fn(
+        lambda el: bbox_loss(*el),
+        elems=[batch_bbox, detr_bbox, indices],
+        dtype=tf.float32,
+    )
+    return tf.reduce_mean(batch_bbox_loss)
 
 
-def init_training(training_config: dict):
-    """Initialize DETR training procedure
+def calculate_mask_loss(batch_masks, detr_masks, indices):
+    """Calculate batch segmentation mask loss.
 
     Parameters
     ----------
-    training_config : dictionary
-        Configuration used for training.
+    batch_masks : tf.Tensor
+        Batch mask targets of shape [Batch Size, #Objects, H, W].
+    detr_masks : tf.Tensor
+        Batch detr mask outputs of shape [Batch Size, #Queries, H_1, W_1], where
+            `H_1` and `W_1` are the shapes of the first feature map coming from
+            the ResNet50 network.
+    indices : tf.Tensor
+        Bipartite matching indices of shape [Batch Size, 2, max_obj].
+        Indicating the assignement between queries and objects in each sample. Note that `max_obj` is
+        specified in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
+
+    Returns
+    -------
+    tf.Tensor
+        Average batch mask loss.
     """
-    if training_config["use_gpu"]:
-        assert tf.config.list_physical_devices("GPU"), "No GPU available"
-        assert tf.test.is_built_with_cuda(), "Tensorflow not compiled with CUDA support"
+    query_idx = tf.where(tf.math.not_equal(indices[:, 0], -1))
+    output = tf.gather_nd(detr_masks, query_idx)
 
-    if model_config.data_type not in ["PVOC", "COCO"]:
-        raise ValueError(
-            "Invalid `data_type` specified in Config: {}".format(model_config.data_type)
-        )
+    object_idx = tf.where(tf.math.not_equal(indices[:, 1], -1))
+    target = tf.gather_nd(batch_masks, object_idx).to_tensor()
 
-    # Get image input shape and number of images in path
-    input_shape, count_images = get_image_information(
-        training_config["storage_path"], model_config.data_type
-    )
+    output = tf.expand_dims(output, axis=-1)
+    output = tf.image.resize(output, size=tf.shape(target)[-2::], method="nearest")
+    output = tf.squeeze(output)
 
-    # Init Backbone Config
-    backbone_config = {
-        "input_shape": input_shape,
-        "include_top": False,
-        "weights": "imagenet",
-    }
+    target = tf.reshape(target, shape=(tf.shape(target)[0], -1))
+    output = tf.reshape(output, shape=(tf.shape(output)[0], -1))
 
-    # Init RPN Model
-    detr = DETR(
-        input_shape=input_shape,
-        num_queries=model_config.num_queries,
-        num_classes=model_config.num_classes,
-        num_heads=model_config.num_heads,
-        dim_transformer=model_config.dim_transformer,
-        dim_feedforward=model_config.dim_feedforward,
-        num_transformer_layer=model_config.num_transformer_layer,
-        train_backbone=model_config.train_backbone,
-        backbone_name=model_config.backbone_name,
-        backbone_config=backbone_config,
-    )
+    dice_loss = calculate_dice_loss(target, output)
+    focal_loss = calculate_focal_loss(target, output)
 
-    if model_config.data_type == "PVOC":
-        print("Use Input Data in PascalVOC format")
-        data_feeder = PVOCFeeder(
-            storage_path=training_config["storage_path"],
-            batch_size=training_config["batch_size"],
-            num_queries=model_config.num_queries,
-            num_classes=model_config.num_classes,
-        )
-    else:
-        print("Use Input Data in COCO format")
-        data_feeder = COCOFeeder(
-            storage_path=training_config["storage_path"],
-            batch_size=training_config["batch_size"],
-            num_queries=model_config.num_queries,
-            num_classes=model_config.num_classes,
-            image_width=model_config.image_width,
-            image_height=model_config.image_height,
-        )
-
-    lr_schedule, wd_schedule = get_decay_schedules(
-        num_steps=count_images // training_config["batch_size"],
-        lr=model_config.learning_rate,
-        drops=model_config.drops,
-        weight_decay=model_config.weight_decay,
-    )
-
-    optimizer = tfa.optimizers.AdamW(
-        weight_decay=wd_schedule, learning_rate=lr_schedule
-    )
-
-    detr.train(
-        training_config=training_config,
-        optimizer=optimizer,
-        count_images=count_images,
-        data_feeder=data_feeder,
-    )
+    mask_loss = dice_loss + focal_loss
+    return mask_loss

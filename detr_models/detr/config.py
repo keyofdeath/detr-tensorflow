@@ -27,12 +27,14 @@ class DefaultDETRConfig:
 
         # Backbone Config
         # MobileNetV2, ResNet50
-        self.backbone_name = "MobileNetV2"
+        self.backbone_name = "ResNet50"
         self.train_backbone = True
 
+        # Train Segmentation Masks
+        # Only supported for ResNet50 at the moment
         self.train_masks = False
 
         # Height and Width of Image after rescaling
         # Only Supporeted for `data_type` COCO
-        self.image_height = 224
-        self.image_width = 224
+        self.image_height = 270
+        self.image_width = 480

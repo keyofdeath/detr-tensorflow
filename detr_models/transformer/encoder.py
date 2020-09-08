@@ -8,11 +8,17 @@ import tensorflow as tf
 from detr_models.transformer.attention import MultiHeadAttention
 
 
-class TransformerEncoder(tf.keras.layers.Layer):
+class TransformerEncoder(tf.keras.Model):
     def __init__(
-        self, num_layers, dim_transformer, num_heads, dim_feedforward, dropout=0.1
+        self,
+        num_layers,
+        dim_transformer,
+        num_heads,
+        dim_feedforward,
+        dropout=0.1,
+        name="Encoder",
     ):
-        super(TransformerEncoder, self).__init__()
+        super(TransformerEncoder, self).__init__(name=name)
 
         self.dim_transformer = dim_transformer
         self.num_layers = num_layers
@@ -24,17 +30,17 @@ class TransformerEncoder(tf.keras.layers.Layer):
             for _ in range(num_layers)
         ]
 
-    def __call__(self, src, positional_encodings, training):
-
+    def call(self, inputs):
+        src, positional_encodings = inputs
         enc_output = src
 
         for i in range(self.num_layers):
-            enc_output = self.enc_layers[i](enc_output, positional_encodings, training)
+            enc_output = self.enc_layers[i]([enc_output, positional_encodings])
 
         return enc_output
 
 
-class TransformerEncoderLayer(tf.keras.layers.Layer):
+class TransformerEncoderLayer(tf.keras.Model):
     def __init__(self, dim_transformer, num_heads, dim_feedforward, dropout=0.1):
         super(TransformerEncoderLayer, self).__init__()
 
@@ -49,16 +55,16 @@ class TransformerEncoderLayer(tf.keras.layers.Layer):
         self.dropout1 = tf.keras.layers.Dropout(dropout)
         self.dropout2 = tf.keras.layers.Dropout(dropout)
 
-    def __call__(self, src, positional_encodings, training=True):
-
+    def call(self, inputs):
+        src, positional_encodings = inputs
         q = k = src + positional_encodings
 
-        attn_output, attention_weights = self.selt_attn(src, k, q)
-        attn_output = self.dropout1(attn_output, training=training)
+        attn_output, attention_weights = self.selt_attn([src, k, q])
+        attn_output = self.dropout1(attn_output)
         out1 = self.norm1(src + attn_output)
 
         ffn_output = self.linear2(self.dropout2(self.linear1(out1)))
-        ffn_output = self.dropout2(ffn_output, training=training)
+        ffn_output = self.dropout2(ffn_output)
 
         out1 = tf.cast(out1, dtype=tf.float32)
         ffn_output = tf.cast(ffn_output, dtype=tf.float32)

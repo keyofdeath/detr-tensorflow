@@ -6,12 +6,14 @@ import warnings
 import ipdb  # noqa: F401
 import numpy as np
 import tensorflow as tf
+
 from detr_models.backbone.backbone import Backbone
-from detr_models.detr.losses import bbox_loss, score_loss
-from detr_models.detr.matcher import bipartite_matching
-from detr_models.detr.utils import create_positional_encodings, save_training_loss
 from detr_models.transformer.transformer import Transformer
-from tensorflow.keras import Model
+from detr_models.detr.utils import create_positional_encodings, save_training_loss
+from detr_models.detr.train import train_base_model, train_segmentation_model
+
+from detr_models.transformer.attention import MultiHeadAttentionMap
+from detr_models.detr.segmentation import SegmentationHead
 
 warnings.filterwarnings("ignore")
 
@@ -30,7 +32,7 @@ class DETR:
         num_transformer_layer,
         backbone_name,
         backbone_config,
-        train_backbone=False,
+        train_backbone,
     ):
         """Initialize Detection Transformer (DETR) network.
 
@@ -55,8 +57,8 @@ class DETR:
             Name of backbone used for DETR network.
         backbone_config : dict
             Config of backbone used for DETR network.
-        train_backbone : bool, optional
-            Flag to indicate training/inference mode.
+        train_backbone : bool
+            Flag to indicate training of backbone.
         """
 
         # Save object parameters
@@ -70,7 +72,7 @@ class DETR:
         self.train_backbone = train_backbone
 
         # Init Backbone
-        self.backbone = Backbone(backbone_name, backbone_config).model
+        self.backbone = Backbone(backbone_name, backbone_config, True).model
         self.backbone.trainable = train_backbone
         self.fm_shape = self.backbone.get_layer("feature_map").output.shape[1::]
         self.positional_encodings_shape = (
@@ -78,75 +80,91 @@ class DETR:
             dim_transformer,
         )
 
-    def build_model(self):
-        """Build Detection Transformer (DETR) model.
-
-        Returns
-        -------
-        tf.Model
-            Detection Transformer (DETR) model
-        """
-        batch_input = tf.keras.layers.Input(shape=self.input_shape, name="Batch_Input")
-        positional_encodings = tf.keras.layers.Input(
-            shape=self.positional_encodings_shape, name="Positional_Encodings_Input"
-        )
-        feature_map = self.backbone(batch_input)
-
-        # Set backbone learning rate order of magnitude smaller
-        feature_map = (1 / 10) * feature_map + (1 - 1 / 10) * tf.stop_gradient(
-            feature_map
-        )
-
-        transformer_input = tf.keras.layers.Conv2D(self.dim_transformer, kernel_size=1)(
-            feature_map
-        )
-
-        batch_size = tf.shape(transformer_input)[0]
-
-        transformer_input = tf.reshape(
-            transformer_input,
-            shape=(
-                batch_size,
-                transformer_input.shape[1] * transformer_input.shape[2],
-                transformer_input.shape[3],
-            ),
-        )
-
-        # Create Queries
-        # Query Input is always a tensor of ones, therefore the output
-        # equals the weights of the Embedding Layer
-        query_pos = tf.ones((self.num_queries), dtype=tf.float32)
-        query_pos = tf.repeat(
-            tf.expand_dims(query_pos, axis=0), repeats=batch_size, axis=0
-        )
-        query_embedding = tf.keras.layers.Embedding(
+        # Init Layers
+        self.embedding_layer = tf.keras.layers.Embedding(
             input_dim=self.num_queries, output_dim=self.dim_transformer
-        )(query_pos)
-
-        transformer = Transformer(
-            self.num_transformer_layer,
-            self.dim_transformer,
-            self.num_heads,
-            self.dim_feedforward,
         )
 
-        transformer_output = transformer(
-            inp=transformer_input,
-            positional_encodings=positional_encodings,
-            query_pos=query_embedding,
+        self.fm_projection = tf.keras.layers.Conv2D(
+            dim_transformer, kernel_size=1, name="FeatureMap_Projection"
+        )
+        self.transformer = Transformer(
+            num_transformer_layer, dim_transformer, num_heads, dim_feedforward
         )
 
-        cls_pred = tf.keras.layers.Dense(
-            units=self.num_classes + 1, activation="softmax"
-        )(transformer_output)
-
-        bbox_pred = tf.keras.layers.Dense(units=4, activation="sigmoid")(
-            transformer_output
+        self.cls_head = tf.keras.layers.Dense(
+            units=self.num_classes + 1, activation="softmax", name="cls_head"
         )
 
-        output_tensor = [cls_pred, bbox_pred]
+        self.bbox_head = tf.keras.layers.Dense(
+            units=4, activation="sigmoid", name="bbox_head"
+        )
 
-        return Model([batch_input, positional_encodings], output_tensor, name="DETR")
+        self.attention_layer = MultiHeadAttentionMap(
+            dim_transformer=dim_transformer, num_heads=num_heads
+        )
+
+        self.segmentation_head = SegmentationHead(
+            num_heads=num_heads, dim_transformer=dim_transformer
+        )
+
+    def build_model(self, use_pretrained=False, train_masks=False):
+        """Build Detection Transformer (DETR) model."""
+
+        if use_pretrained:
+            print("\nLoad pre-trained model: {}".format(use_pretrained))
+            self.model = tf.keras.models.load_model(use_pretrained, compile=False)
+        else:
+            print("\nBuild Model from scratch.")
+            batch_input = tf.keras.layers.Input(
+                shape=self.input_shape, name="Batch_Input"
+            )
+            positional_encodings = tf.keras.layers.Input(
+                shape=self.positional_encodings_shape, name="Positional_Encodings_Input"
+            )
+
+            fpn_maps = self.backbone(batch_input)
+            feature_map = fpn_maps[-1]
+
+            # Set backbone learning rate order of magnitude smaller
+            feature_map = (1 / 10) * feature_map + (1 - 1 / 10) * tf.stop_gradient(
+                feature_map
+            )
+
+            transformer_input = self.fm_projection(feature_map)
+
+            batch_size = tf.shape(transformer_input)[0]
+
+            # Create Queries
+            # Query Input is always a tensor of ones, therefore the output
+            # equals the weights of the Embedding Layer
+            query_pos = tf.ones((self.num_queries), dtype=tf.float32)
+            query_pos = tf.repeat(
+                tf.expand_dims(query_pos, axis=0), repeats=batch_size, axis=0
+            )
+            query_embedding = self.embedding_layer(query_pos)
+
+            transformer_output, memory = self.transformer(
+                [transformer_input, positional_encodings, query_embedding]
+            )
+
+            cls_pred = self.cls_head(transformer_output)
+
+            bbox_pred = self.bbox_head(transformer_output)
+
+            output_tensor = [cls_pred, bbox_pred]
+
+            if train_masks:
+                attention_hmaps = self.attention_layer([memory, transformer_output])
+                mask_pred = self.segmentation_head(
+                    [transformer_input, attention_hmaps, fpn_maps[:-1]]
+                )
+
+                output_tensor = [cls_pred, bbox_pred, mask_pred]
+
+            self.model = tf.keras.Model(
+                [batch_input, positional_encodings], output_tensor, name="DETR"
+            )
 
     def train(self, training_config, optimizer, count_images, data_feeder):
         """Train the DETR Model.
@@ -168,25 +186,10 @@ class DETR:
         float
             Final training loss.
         """
-
-        print("-------------------------------------------", flush=True)
-        print("-------------------------------------------\n", flush=True)
-
-        if training_config["use_pretrained"]:
-            print(
-                "Load pre-trained model from: {}\n".format(
-                    training_config["use_pretrained"]
-                ),
-                flush=True,
-            )
-            model = tf.keras.models.load_model(training_config["use_pretrained"])
-        else:
-            print("Build model from scratch\n", flush=True)
-            model = self.build_model()
-
-        print("-------------------------------------------\n", flush=True)
         print(
-            "Start Training - Total of {} Epochs:\n".format(training_config["epochs"]),
+            "\nStart Training - Total of {} Epochs:\n".format(
+                training_config["epochs"]
+            ),
             flush=True,
         )
 
@@ -198,6 +201,11 @@ class DETR:
             batch_size=training_config["batch_size"],
         )
 
+        if training_config["train_masks"] and (len(self.model.output) != 3):
+            raise TypeError(
+                "Segmentation Head is not available in model. Please build model with head to train masks."
+            )
+
         for epoch in range(training_config["epochs"]):
             start = time.time()
             print("-------------------------------------------", flush=True)
@@ -208,15 +216,27 @@ class DETR:
             # Iterate over all batches
             for input_data in data_feeder(training_config["verbose"]):
 
-                batch_loss = _train(
-                    detr=model,
-                    optimizer=optimizer,
-                    batch_inputs=input_data[0],
-                    batch_cls=input_data[1],
-                    batch_bbox=input_data[2],
-                    obj_indices=input_data[3],
-                    positional_encodings=positional_encodings,
-                )
+                if training_config["train_masks"]:
+                    batch_loss = train_segmentation_model(
+                        detr=self.model,
+                        optimizer=optimizer,
+                        batch_inputs=input_data[0],
+                        batch_cls=input_data[1],
+                        batch_bbox=input_data[2],
+                        batch_masks=input_data[4],
+                        obj_indices=input_data[3],
+                        positional_encodings=positional_encodings,
+                    )
+                else:
+                    batch_loss = train_base_model(
+                        detr=self.model,
+                        optimizer=optimizer,
+                        batch_inputs=input_data[0],
+                        batch_cls=input_data[1],
+                        batch_bbox=input_data[2],
+                        obj_indices=input_data[3],
+                        positional_encodings=positional_encodings,
+                    )
 
                 batch_loss = np.array([loss.numpy() for loss in batch_loss])
 
@@ -242,121 +262,9 @@ class DETR:
         print("Finalize Training\n", flush=True)
 
         # Save training loss and model
-        model.save("{}/detr_model".format(training_config["output_dir"]))
+        self.model.save("{}/detr_model".format(training_config["output_dir"]))
         save_training_loss(
             detr_loss, "{}/detr_loss.txt".format(training_config["output_dir"])
         )
 
         return detr_loss
-
-
-@tf.function
-def _train(
-    detr,
-    optimizer,
-    batch_inputs,
-    batch_cls,
-    batch_bbox,
-    obj_indices,
-    positional_encodings,
-):
-    """Train step of the DETR network.
-
-    Parameters
-    ----------
-    detr : tf.Model
-        Detection Transformer (DETR) Model.
-    optimizer : tf.Optimizer
-        Any chosen optimizer used for training.
-    batch_inputs : tf.Tensor
-        Batch input images of shape [Batch Size, H, W, C].
-    batch_cls : tf.Tensor
-        Batch class targets of shape [Batch Size, #Queries, 1].
-    batch_bbox : tf.Tensor
-        Batch bounding box targets of shape [Batch Size, #Queries, 4].
-    obj_indices : tf.RaggedTensor
-        Helper tensor of shape [Batch Size, None].
-        Used to link objects in the cost matrix to the target tensors.
-    positional_encodings : tf.Tensor
-        Positional encodings of shape [Batch Size, H*W, dim_transformer].
-        Used in transformer network to enrich input information.
-    """
-
-    with tf.GradientTape() as gradient_tape:
-        detr_scores, detr_bbox = detr(
-            [batch_inputs, positional_encodings], training=True
-        )
-
-        indices = bipartite_matching(
-            detr_scores, detr_bbox, batch_cls, batch_bbox, obj_indices
-        )
-
-        score_loss = tf.constant(10.0) * calculate_score_loss(
-            batch_cls, detr_scores, indices
-        )
-        bbox_loss = calculate_bbox_loss(batch_bbox, detr_bbox, indices)
-
-        detr_loss = score_loss + bbox_loss
-
-        gradients = gradient_tape.gradient(detr_loss, detr.trainable_variables)
-        gradients = [
-            tf.clip_by_norm(gradient, tf.constant(0.1)) for gradient in gradients
-        ]
-        optimizer.apply_gradients(zip(gradients, detr.trainable_variables))
-
-    return [detr_loss, score_loss, bbox_loss]
-
-
-def calculate_score_loss(batch_cls, detr_scores, indices):
-    """Helper function to calculate the score loss.
-
-    Parameters
-    ----------
-    batch_cls : tf.Tensor
-        Batch class targets of shape [Batch Size, #Queries, 1].
-    detr_scores : tf.Tensor
-        Batch detr score outputs of shape [Batch Size. #Queries, #Classes + 1].
-    indices : tf.Tensor
-        Bipartite matching indices of shape [Batch Size, 2, max_obj].
-        Indicating the assignement between queries and objects in each sample. Note that `max_obj` is
-        specified in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
-
-    Returns
-    -------
-    tf.Tensor
-        Average batch score loss.
-    """
-    batch_score_loss = tf.map_fn(
-        lambda el: score_loss(*el),
-        elems=[batch_cls, detr_scores, indices],
-        dtype=tf.float32,
-    )
-    return tf.reduce_mean(batch_score_loss)
-
-
-def calculate_bbox_loss(batch_bbox, detr_bbox, indices):
-    """Helper function to calculate the bounding box loss.
-
-    Parameters
-    ----------
-    batch_bbox : tf.Tensor
-        Batch bounding box targets of shape [Batch Size, #Queries, 4].
-    detr_bbox : tf.Tensor
-        Batch detr bounding box outputs of shape [Batch Size. #Queries, 4].
-    indices : tf.Tensor
-        Bipartite matching indices of shape [Batch Size, 2, max_obj].
-        Indicating the assignement between queries and objects in each sample. Note that `max_obj` is
-        specified in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
-
-    Returns
-    -------
-    tf.Tensor
-        Average batch bounding box loss
-    """
-
-    batch_bbox_loss = tf.map_fn(
-        lambda el: bbox_loss(*el),
-        elems=[batch_bbox, detr_bbox, indices],
-        dtype=tf.float32,
-    )
-    return tf.reduce_mean(batch_bbox_loss)

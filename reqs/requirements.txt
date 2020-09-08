@@ -6,3 +6,4 @@ keras
 tensorflow_addons
 pycocotools
 scikit-learn
+typing
