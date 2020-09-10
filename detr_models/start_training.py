@@ -77,6 +77,11 @@ def init_training(training_config: dict):
             "Invalid `data_type` specified in Config: {}".format(config.data_type)
         )
 
+    if training_config["train_masks"] and config.backbone_name != "ResNet50":
+        raise ValueError(
+            "Training segmentation masks is currently only supported for `ResNet50` backbone."
+        )
+
     # Get image input shape and number of images in path
     input_shape, count_images = get_image_information(
         training_config["storage_path"], config.data_type
