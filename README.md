@@ -67,20 +67,30 @@ storage_path/				# path/to/data_storage
 You can easily start the training procedure from `detr_models/detr/` using:
 
 ```console
-python3 train.py --storage_path <PATH> --output_dir <PATH> <Additional Parameters>
+python3 start_training.py --storage_path <PATH> --output_dir <PATH> <Additional Parameters>
 ```
 
 Additional parameters such as *epochs*, *batch_size* etc. can be set. Please take a look at the help text for a complete overview using:
 
 ```console
-python3 train.py --help
+python3 start_training.py --help
+
+# Possible Arguments:
+# -sp, --storage_path
+# -o , --output_dir
+# -bs, --batch_size
+# -e , --epochs
+# -tm, --train_masks
+# -up, --use_pretrained
 ```
 
 If no additional parameters are used, the defaults as specified in `detr_models/detr/config.py` will be used.
 
 #### 3.C.II. Via Jupyter Notebook
 
-If you want to execute training (e.g. on a pre-trained model) or just get a quick overview over the model architecture, you can also use the jupyter notebook `DETR.ipynb` provided in `/notebooks`.
+We provide multiple notebooks you can play around with in order to get a better understanding of this model.
+The notebooks with prefix `DETR_` illustrate all model-related information, such as architecture, inference and training. Other notebooks focus mainly on the helper tools, such as e.g. the data feeder.
+
 
 &nbsp;
 &nbsp;
@@ -88,7 +98,7 @@ If you want to execute training (e.g. on a pre-trained model) or just get a quic
 - [x] Adjust `data_feeder/loadlabel` to handle Coco annotations
 - [x] Include unittests to verify COCOFeeder
 - [ ] Take `max_obj` into config
-- [ ] Include mask head to model for segmentation
+- [x] Include mask head to model for segmentation
 - [x] Parameterize to handle images with varying shape and paddings
 - [ ] Parameterize backbone config
 - [ ] Include inference script
