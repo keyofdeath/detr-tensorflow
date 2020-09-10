@@ -14,7 +14,7 @@ from detr_models.data_feeder.coco_feeder import (
     padd_target_for_queries,
     resize_and_pad_image,
     resize_and_pad_masks,
-    retrieve_bbox_from_masks,
+    retrieve_normalized_bbox,
     retrieve_obj_indices,
     slize_batches,
 )
@@ -176,7 +176,7 @@ def test_resize_and_pad_masks():
     assert [mask.shape for mask in result] == expected_shape
 
 
-def test_retrieve_bbox_from_masks():
+def test_retrieve_normalized_bbox():
     mask = np.array(
         [
             [0, 0, 0, 0, 0, 0],
@@ -186,9 +186,9 @@ def test_retrieve_bbox_from_masks():
             [0, 0, 0, 0, 0, 0],
         ]
     )
-
-    result = retrieve_bbox_from_masks([mask])
-    expected_result = (1, 1, 3, 2)
+    height, width = 5, 6
+    result = retrieve_normalized_bbox([mask], width, height)
+    expected_result = (1 / width, 1 / height, 3 / width, 2 / height)
     assert len(result[0]) == 4
     assert (result[0] == expected_result).all()
 
@@ -202,7 +202,7 @@ def test_retrieve_bbox_from_masks():
         ]
     )
 
-    result = retrieve_bbox_from_masks([mask])
-    expected_result = (1, 0, 3, 4)
+    result = retrieve_normalized_bbox([mask], width, height)
+    expected_result = (1 / width, 0 / height, 3 / width, 4 / height)
     assert len(result[0]) == 4
     assert (result[0] == expected_result).all()

@@ -70,23 +70,21 @@ def create_bbox_mask(
 
 
 @tf.function(input_signature=[tf.TensorSpec(shape=[None, 4], dtype=tf.float32)])
-def box_cxcywh_to_xyxy(bboxes):
+def box_x1y1wh_to_yxyx(bboxes):
 
     num_queries = tf.shape(bboxes)[0]
-    xyxy = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+    yxyx = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
 
     for idx in range(num_queries):
         sample = bboxes[idx]
-        x_c = tf.gather(sample, 0)
-        y_c = tf.gather(sample, 1)
+        x1 = tf.gather(sample, 0)
+        y1 = tf.gather(sample, 1)
         w = tf.gather(sample, 2)
         h = tf.gather(sample, 3)
-        sample = tf.stack(
-            [(x_c - 0.5 * w), (y_c - 0.5 * h), (x_c + 0.5 * w), (y_c + 0.5 * h)]
-        )
-        xyxy = xyxy.write(idx, sample)
+        sample = tf.stack([y1, (x1), (y1 + h), (x1 + w)])
+        yxyx = yxyx.write(idx, sample)
 
-    return xyxy.stack()
+    return yxyx.stack()
 
 
 def create_positional_encodings(fm_shape, num_pos_feats, batch_size):

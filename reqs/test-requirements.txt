@@ -1,4 +1,4 @@
-py.test
+pytest
 pycocotools
 pre-commit
 ipdb

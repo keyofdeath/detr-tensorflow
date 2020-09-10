@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import Model
-from voluptuous import Required, Schema
+from voluptuous import Required, Schema, Optional
 
 tf.keras.backend.set_floatx("float32")
 
@@ -23,6 +23,7 @@ class Backbone:
                 Required("input_shape"): Schema((int, int, int)),
                 Required("include_top"): bool,
                 Required("weights"): str,
+                Optional("alpha"): float,
             }
         )
 
@@ -37,7 +38,11 @@ class Backbone:
 
         # Remove Layers until Conv4
         for i, layer in enumerate(reversed(self.model.layers)):
-            if layer._name == "conv4_block6_out":
+            if backbone_name == "ResNet50" and layer._name == "conv4_block6_out":
+                break
+            elif (
+                backbone_name == "MobileNetV2" and layer._name == "block_13_expand_relu"
+            ):
                 break
             else:
                 self.model._layers.pop()

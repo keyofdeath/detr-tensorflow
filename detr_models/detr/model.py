@@ -220,13 +220,22 @@ class DETR:
 
                 batch_loss = np.array([loss.numpy() for loss in batch_loss])
 
+                if training_config["verbose"]:
+                    print("\nDETR Batch Loss: {:.3f}".format(batch_loss[0]))
+                    print("Cls. Batch Loss: {:.3f}".format(batch_loss[1]))
+                    print("Bounding Box Batch Loss: {:.3f}\n".format(batch_loss[2]))
+
                 epoch_loss = epoch_loss + batch_loss
 
                 batch_iteration += 1
 
+            epoch_loss = (1 / batch_iteration) * epoch_loss
             detr_loss.append(epoch_loss)
 
-            print("DETR Loss: %f" % epoch_loss[0], flush=True)
+            print("DETR Loss: {:.3f}".format(epoch_loss[0]), flush=True)
+            print("Class Loss: {:.3f}".format(epoch_loss[1]), flush=True)
+            print("Bounding Box Loss: {:.3f}".format(epoch_loss[2]), flush=True)
+
             print(f"Time for epoch {epoch + 1} is {time.time()-start} sec", flush=True)
             print("-------------------------------------------\n", flush=True)
 
@@ -282,7 +291,9 @@ def _train(
             detr_scores, detr_bbox, batch_cls, batch_bbox, obj_indices
         )
 
-        score_loss = calculate_score_loss(batch_cls, detr_scores, indices)
+        score_loss = tf.constant(10.0) * calculate_score_loss(
+            batch_cls, detr_scores, indices
+        )
         bbox_loss = calculate_bbox_loss(batch_bbox, detr_bbox, indices)
 
         detr_loss = score_loss + bbox_loss
@@ -296,7 +307,6 @@ def _train(
     return [detr_loss, score_loss, bbox_loss]
 
 
-@tf.function
 def calculate_score_loss(batch_cls, detr_scores, indices):
     """Helper function to calculate the score loss.
 
@@ -324,7 +334,6 @@ def calculate_score_loss(batch_cls, detr_scores, indices):
     return tf.reduce_mean(batch_score_loss)
 
 
-@tf.function
 def calculate_bbox_loss(batch_bbox, detr_bbox, indices):
     """Helper function to calculate the bounding box loss.
 

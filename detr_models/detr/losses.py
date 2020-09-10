@@ -4,7 +4,7 @@ import ipdb  # noqa: F401
 import keras.backend as K
 import tensorflow as tf
 import tensorflow_addons as tfa
-from detr_models.detr.utils import box_cxcywh_to_xyxy
+from detr_models.detr.utils import box_x1y1wh_to_yxyx
 
 tf.keras.backend.set_floatx("float32")
 
@@ -125,7 +125,6 @@ def bbox_loss(
     tf.Tensor
         Sample mean bounding box loss. Averaged over number of objects in sample.
     """
-
     # Retrieve query and object idx
     query_idx, object_idx = filter_sample_indices(indices)
 
@@ -138,9 +137,9 @@ def bbox_loss(
     # Calculate GIoU Loss
     giou_loss = tfa.losses.GIoULoss(reduction=tf.keras.losses.Reduction.NONE)
 
-    giou_loss = giou_loss(
-        y_true=box_cxcywh_to_xyxy(ordered_target),
-        y_pred=box_cxcywh_to_xyxy(ordered_output),
+    giou_loss = 1 - tfa.losses.giou_loss(
+        y_true=box_x1y1wh_to_yxyx(ordered_target),
+        y_pred=box_x1y1wh_to_yxyx(ordered_output),
     )
 
     return tf.reduce_mean(l1_cost_factor * l1_loss + iou_cost_factor * giou_loss)

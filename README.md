@@ -43,14 +43,14 @@ pip3 install -r reqs/test-requirements.txt		# Install test-requirements
 
 You can use this repository for data stored in PascalVOC or in the COCO format. Therefore, your data should match the following folder structures:
 
-#### PascalVOC
+#### COCO
 ```console
 storage_path/				# path/to/data_storage
 	images/				# includes all .jpg files
 	coco.json 			# COCO annotation .JSON
 ```
 
-#### COCO
+#### PascalVOC
 ```console
 storage_path/				# path/to/data_storage
 	labels/				# includes all .txt files where each line corresponds to one object in image

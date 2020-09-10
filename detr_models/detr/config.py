@@ -5,7 +5,7 @@ class DefaultDETRConfig:
         self.data_type = "COCO"
 
         # Number of Predictions per Image
-        self.num_queries = 100
+        self.num_queries = 60
 
         # Number of Classes in the dataset
         # Please note that the actual numbering of the classes
@@ -14,7 +14,7 @@ class DefaultDETRConfig:
 
         # Transformer Config
         self.dim_transformer = 256
-        self.dim_feedforward = 1024
+        self.dim_feedforward = 512
         self.num_transformer_layer = 2
         self.num_heads = 8
 
@@ -26,12 +26,13 @@ class DefaultDETRConfig:
         self.weight_decay = 1e-4
 
         # Backbone Config
-        self.backbone_name = "ResNet50"
+        # MobileNetV2, ResNet50
+        self.backbone_name = "MobileNetV2"
         self.train_backbone = True
 
         self.train_masks = False
 
         # Height and Width of Image after rescaling
         # Only Supporeted for `data_type` COCO
-        self.image_height = 270
-        self.image_width = 480
+        self.image_height = 224
+        self.image_width = 224

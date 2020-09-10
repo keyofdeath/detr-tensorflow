@@ -43,7 +43,10 @@ class COCOFeeder:
             Image height used for scaling of input images and masks.
         """
         self.name = "COCOFeeder"
+
         self.storage_path = storage_path
+        print("\nFeed DETR model with data from: {}\n".format(storage_path), flush=True)
+
         self.image_path = os.path.join(storage_path, "images")
 
         self.num_queries = np.int32(num_queries)
@@ -74,16 +77,32 @@ class COCOFeeder:
         coco = load_coco(path_to_coco)
 
         image_ids = coco.getImgIds()
-        random.shuffle(image_ids)
 
         image_ids = slize_batches(image_ids, self.batch_size)
+        # Each  Iteration consists of k=1000 steps
+        image_ids = random.choices(image_ids, k=1000)
 
         for batch_iteration, batch_image_ids in enumerate(image_ids):
-            input_data = self.prepare_inputs(coco, batch_image_ids)
-            yield input_data
+            try:
+                input_data = self.prepare_inputs(coco, batch_image_ids)
+            except Exception as ex:
+                print("Could not Read Image IDs: `{}` - {}".format(batch_image_ids, ex))
+                continue
 
             if verbose:
-                progress_bar(total=len(image_ids), current=batch_iteration + 1)
+                print("Read Batch Imgs: {}".format(batch_image_ids))
+                print("Batch Images Input Shape:{}".format(input_data[0].shape))
+                print("Batch Class Labels Input Shape:{}".format(input_data[1].shape))
+                print(
+                    "Batch Class Bounding Boxes Input Shape:{}".format(
+                        input_data[2].shape
+                    )
+                )
+                print("Object IDs matching to Image ID: {}".format(input_data[3]))
+
+            yield input_data
+
+            progress_bar(total=len(image_ids), current=batch_iteration + 1)
 
     def prepare_inputs(self, coco: object, batch_image_ids: list):
         """Prepare input data for DETR.
@@ -121,30 +140,34 @@ class COCOFeeder:
 
             sample_image = load_image(image_path)
             sample_image = resize_and_pad_image(
-                sample_image, height=self.image_height, width=self.image_width
+                sample_image, width=self.image_width, height=self.image_height
             )
 
             # Load target class and masks
             sample_cls, sample_masks = load_target_cls_and_masks(coco, img_id)
             sample_masks = resize_and_pad_masks(
-                sample_masks, height=self.image_height, width=self.image_width
+                sample_masks, width=self.image_width, height=self.image_height
             )
 
             # Retrieve Bounding Boxes
-            sample_bboxs = retrieve_bbox_from_masks(sample_masks)
+            sample_bboxs = retrieve_normalized_bbox(
+                sample_masks=sample_masks,
+                width=self.image_width,
+                height=self.image_height,
+            )
 
             # Padd target classes and bounding boxes
             sample_cls = padd_target_for_queries(
                 target=sample_cls,
                 num_columns=1,
                 num_queries=self.num_queries,
-                num_classes=self.num_classes,
+                fill_value=self.num_classes,
             )
             sample_bboxs = padd_target_for_queries(
                 target=sample_bboxs,
                 num_columns=4,
                 num_queries=self.num_queries,
-                num_classes=self.num_classes,
+                fill_value=0,
             )
 
             # Append to placeholders
@@ -289,9 +312,11 @@ def _downscale_image(image: Image, width: int, height: int):
 
     Parameters
     ----------
-    image : Image
+    image : PIL.Image
     width : int
+        Resized image width.
     height : int
+        Resized image height.
 
     Returns
     -------
@@ -311,7 +336,9 @@ def _pad_image(image: Image, width: int, height: int):
     ----------
     image : PIL.Image
     width : int
+        Resized image width.
     height : int
+        Resized image height.
 
     Returns
     -------
@@ -332,9 +359,9 @@ def resize_and_pad_image(image: Image, width: int, height: int):
     ----------
     image : PIL.Image
     width : int
-        Width to be resized to.
+        Resized image width.
     height : int
-        Height to be resized to.
+        Resized image height.
 
     Returns
     -------
@@ -357,7 +384,9 @@ def resize_and_pad_masks(sample_masks: np.ndarray, width: int, height: int):
     ----------
     sample_masks : np.ndarray
     width : int
+        Resized image width.
     height : int
+        Resized image height.
 
     Returns
     -------
@@ -369,7 +398,25 @@ def resize_and_pad_masks(sample_masks: np.ndarray, width: int, height: int):
     return np.array(sample_masks)
 
 
-def retrieve_bbox_from_masks(sample_masks: np.ndarray):
+def retrieve_normalized_bbox(sample_masks: np.ndarray, width: int, height: int):
+    """Retrieve the bounding box from the resized segmentation mask and normalize the
+    coordinates using the image shapes.
+
+    Parameters
+    ----------
+    sample_masks : np.ndarray
+        Resized masks of shape [#Objects, Height, Width]
+    width : int
+        Resized image width.
+    height : int
+        Resized image height.
+
+    Returns
+    -------
+    sample_bboxs : np.ndarray
+        Normalized bounding boxes of shape [#Objects, 4].
+        The coordinates are specified as [xmin, ymin, width, height].
+    """
     sample_bboxs = []
 
     for mask in sample_masks:
@@ -377,20 +424,20 @@ def retrieve_bbox_from_masks(sample_masks: np.ndarray):
         ymin, ymax = np.min(ycoord), np.max(ycoord)
         xmin, xmax = np.min(xcoord), np.max(xcoord)
         w, h = (xmax - xmin), (ymax - ymin)
-        bbox = xmin, ymin, w, h
+        bbox = xmin / width, ymin / height, w / width, h / height
+
         sample_bboxs.append(bbox)
 
     return np.array(sample_bboxs)
 
 
 def padd_target_for_queries(
-    target: np.ndarray, num_columns: int, num_queries: int, num_classes: int
+    target: np.ndarray, num_columns: int, num_queries: int, fill_value: int
 ):
     """Padd a given target to match number of queries.
 
     Usually, #Objects < #Queries and we therefore need to padd the targets to match the
-    predictions in the model. We use `num_classes` to fill the arrays, as this corresponds
-    to the background class.
+    predictions in the model. We use `fill_value` to fill the arrays.
 
     Parameters
     ----------
@@ -400,13 +447,13 @@ def padd_target_for_queries(
         Number of columns for padding.
     num_queries : int
         Number of queries used in transformer network.
-    num_classes : int
-        Number of target classes.
+    fill_value : int
+        Padding fill value.
 
     Returns
     -------
     padded : np.ndarray
-        Padded target array of shape (#Queries, num_columns), padded with `num_classes`.
+        Padded target array of shape (#Queries, num_columns), padded with `fill_value`.
     """
 
     if target.shape[0] > num_queries:
@@ -415,7 +462,7 @@ def padd_target_for_queries(
         )
 
     padded = np.full(
-        shape=(num_queries, num_columns), fill_value=num_classes, dtype=np.float32
+        shape=(num_queries, num_columns), fill_value=fill_value, dtype=np.float32
     )
     for idx, target_object in enumerate(target):
         padded[idx, :] = target_object
