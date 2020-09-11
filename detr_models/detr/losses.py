@@ -4,162 +4,200 @@ import ipdb  # noqa: F401
 import keras.backend as K
 import tensorflow as tf
 import tensorflow_addons as tfa
-from detr_models.detr.utils import box_x1y1wh_to_yxyx
+import tensorflow.keras.losses as tfl
+
+from detr_models.detr.utils import box_x1y1wh_to_yxyx, extract_ordering_idx
 
 tf.keras.backend.set_floatx("float32")
 
 
-@tf.function
-def filter_sample_indices(indices):
-    """Filter the correct indices that belong to the corresponding sample. The input tensor
-    is padded to constitute a regular tensor. Therefore, the main goal of this function is
-    to filter the matching query and object indices from the paddings.
-
-    Parameters
-    ----------
-    indices : tf.Tensor
-        Bipartite matching indices for the sample of shape [2, max_obj].
-        Indicating the assignement between queries and objects. Note that `max_obj` is specified
-        in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
-
-    Returns
-    -------
-    tf.Tensor, tf.Tensor
-        Matching query and object indices filtered from the padded input tensor. Both tensors
-        are of shape [#SampleObjects].
-    """
-    query_idx = tf.gather(indices, 0)
-    object_idx = tf.gather(indices, 1)
-
-    query_idx = tf.gather(query_idx, tf.where(tf.math.not_equal(query_idx, -1)))
-    object_idx = tf.gather(object_idx, tf.where(tf.math.not_equal(object_idx, -1)))
-
-    query_idx = tf.reshape(query_idx, shape=[tf.shape(query_idx)[0]])
-    object_idx = tf.reshape(object_idx, shape=[tf.shape(object_idx)[0]])
-
-    return query_idx, object_idx
-
-
-@tf.function
-def score_loss(target, output, indices):
-    """Calculate classification/score loss.
-
-    Parameters
-    ----------
-    target : tf.Tensor
-        Sample target classes of shape [#Queries, 1].
-    output : tf.Tensor
-        Sample output class predictions of shape [#Queries, #Classes+1].
-    indices : tf.Tensor
-        Bipartite matching indices for the sample of shape [2, max_obj].
-        Indicating the assignement between queries and objects. Note that `max_obj` is specified
-        in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
-
-    Returns
-    -------
-    tf.Tensor
-        Sample classification/score loss. Averaged over number of queries.
-    """
-    num_queries = tf.shape(output)[0]
-    num_classes = tf.shape(output)[1]
-
-    # Retrieve query and object idx
-    query_idx, object_idx = filter_sample_indices(indices)
-
-    # Filter target cls to aligne with matching outputs
-    # Indices of Output
-    out_indices = tf.expand_dims(query_idx, 1)
-
-    # Updates of Target
-    tgt_updates = tf.gather(target, object_idx)
-    tgt_updates = tf.cast(tgt_updates, dtype=tf.int32)
-    tgt_updates = tf.one_hot(tgt_updates, depth=num_classes, dtype=tf.float32)
-    tgt_updates = tf.squeeze(tgt_updates, axis=1)
-
-    # Placeholder filled with only 'non_object'
-    # Balance between positive and negative predcitions, as there are way
-    # more negative ones which would otherwise outweigh the result
-    fill_tensor = tf.expand_dims(
-        tf.one_hot(num_classes - 1, num_classes, on_value=0.1), 0
-    )
-    ordered_target_mask = tf.repeat(fill_tensor, repeats=num_queries, axis=0)
-
-    # Ordered output according to hungarian matching
-    # The target values of the labels are inserted at the idx corresponding
-    # to the matching model output
-    ordered_target = tf.tensor_scatter_nd_update(
-        ordered_target_mask, out_indices, tgt_updates
-    )
-
-    sample_loss = K.categorical_crossentropy(target=ordered_target, output=output)
-    return tf.reduce_mean(sample_loss)
-
-
-@tf.function
-def bbox_loss(
-    target,
-    output,
-    indices,
-    l1_cost_factor=tf.constant(5.0, dtype=tf.float32),
-    iou_cost_factor=tf.constant(2.0, dtype=tf.float32),
+def calculate_cls_loss(
+    batch_cls, detr_scores, indices, non_object_weight=tf.constant(0.1)
 ):
-    """Calculate bounding box loss.
+    """Helper function to calculate the score loss.
 
     Parameters
     ----------
-    target : tf.Tensor
-        Sample target bounding boxes of shape [#Queries, 4].
-    output : tf.Tensor
-        Sample output bounding boxes predictions of shape [#Queries, 4].
+    batch_cls : tf.Tensor
+        Batch class targets of shape [Batch Size, #Queries, 1].
+    detr_scores : tf.Tensor
+        Batch detr score outputs of shape [Batch Size. #Queries, #Classes + 1].
     indices : tf.Tensor
-        Bipartite matching indices for the sample of shape [2, max_obj].
-        Indicating the assignement between queries and objects. Note that `max_obj` is specified
-        in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
-    l1_cost_factor : tf.Tensor, optional
-        Cost factor for L1-loss.
-    iou_cost_factor : tf.Tensor, optional
-        Cost factor for generalized IoU loss.
+        Bipartite matching indices of shape [Batch Size, 2, max_obj].
+        Indicating the assignement between queries and objects in each sample. Note that `max_obj` is
+        specified in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
 
     Returns
     -------
     tf.Tensor
-        Sample mean bounding box loss. Averaged over number of objects in sample.
+        Average batch score loss.
     """
-    # Retrieve query and object idx
-    query_idx, object_idx = filter_sample_indices(indices)
+    num_classes = tf.math.reduce_max(batch_cls)
+    query_idx = extract_ordering_idx(indices[:, 0])
 
-    # Select Ordered Target/Output according to the hungarian matching
-    ordered_target = tf.gather(target, object_idx)
-    ordered_output = tf.gather(output, query_idx)
-    # Calculate L1 Loss
-    l1_loss = tf.reduce_sum(tf.math.abs(ordered_target - ordered_output), axis=1)
+    object_idx = extract_ordering_idx(indices[:, 1])
+    target_updates = tf.gather_nd(batch_cls, object_idx)
 
-    # Calculate GIoU Loss
-    giou_loss = tfa.losses.GIoULoss(reduction=tf.keras.losses.Reduction.NONE)
+    target = tf.fill(tf.shape(batch_cls), value=num_classes)
+    target = tf.tensor_scatter_nd_update(target, query_idx, target_updates)
 
-    giou_loss = 1 - tfa.losses.giou_loss(
-        y_true=box_x1y1wh_to_yxyx(ordered_target),
-        y_pred=box_x1y1wh_to_yxyx(ordered_output),
-    )
+    object_weight = tf.fill(tf.shape(target_updates), value=tf.constant(1.0))
+    sample_weight = tf.fill(tf.shape(batch_cls), value=non_object_weight)
+    sample_weight = tf.tensor_scatter_nd_update(sample_weight, query_idx, object_weight)
 
-    return tf.reduce_mean(l1_cost_factor * l1_loss + iou_cost_factor * giou_loss)
+    cross_entropy = calculate_ce_loss(target, detr_scores, sample_weight)
+    return cross_entropy
 
 
-@tf.function
-def calculate_dice_loss(target: tf.Tensor, output: tf.Tensor):
-    """Calculate dice loss for batch.
+def calculate_bbox_loss(batch_bbox, detr_bbox, indices):
+    """Calculate batch bounding box losses.
+
+    Parameters
+    ----------
+    batch_bbox : tf.Tensor
+        Batch bounding box targets of shape [Batch Size, #Queries, 4].
+    detr_bbox : tf.Tensor
+        Batch detr bounding box outputs of shape [Batch Size. #Queries, 4].
+    indices : tf.Tensor
+        Bipartite matching indices of shape [Batch Size, 2, max_obj].
+        Indicating the assignement between queries and objects in each sample. Note that `max_obj` is
+        specified in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
+
+    Returns
+    -------
+    l1_loss : tf.Tensor[float]
+        L1 loss averaged by the number of objects in batch.
+    giou_loss : tf.Tensor[float]
+        GIoU loss averaged by the number of objects in batch.
+    """
+    query_idx = extract_ordering_idx(indices[:, 0])
+    output = tf.gather_nd(detr_bbox, query_idx)
+
+    object_idx = extract_ordering_idx(indices[:, 1])
+    target = tf.gather_nd(batch_bbox, object_idx)
+
+    l1_loss = calculate_l1_loss(target, output)
+    giou_loss = calculate_giou_loss(target, output)
+
+    return l1_loss, giou_loss
+
+
+def calculate_mask_loss(batch_masks, detr_masks, indices):
+    """Calculate batch segmentation mask losses.
+
+    Parameters
+    ----------
+    batch_masks : tf.Tensor
+        Batch mask targets of shape [Batch Size, #Objects, H, W].
+    detr_masks : tf.Tensor
+        Batch detr mask outputs of shape [Batch Size, #Queries, H_1, W_1], where
+            `H_1` and `W_1` are the shapes of the first feature map coming from
+            the ResNet50 network.
+    indices : tf.Tensor
+        Bipartite matching indices of shape [Batch Size, 2, max_obj].
+        Indicating the assignement between queries and objects in each sample. Note that `max_obj` is
+        specified in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
+
+    Returns
+    -------
+    tf.Tensor
+        Average batch mask loss.
+    """
+    query_idx = extract_ordering_idx(indices[:, 0])
+    output = tf.gather_nd(detr_masks, query_idx)
+
+    object_idx = extract_ordering_idx(indices[:, 1])
+    target = tf.gather_nd(batch_masks, object_idx).to_tensor()
+
+    output = tf.expand_dims(output, axis=-1)
+    output = tf.image.resize(output, size=tf.shape(target)[-2::], method="nearest")
+    output = tf.squeeze(output)
+
+    target = tf.reshape(target, shape=(tf.shape(target)[0], -1))
+    output = tf.reshape(output, shape=(tf.shape(output)[0], -1))
+
+    dice_loss = calculate_dice_loss(target, output)
+    focal_loss = calculate_focal_loss(target, output)
+
+    return dice_loss, focal_loss
+
+
+def calculate_ce_loss(target: tf.Tensor, output: tf.Tensor, sample_weight=None):
+    """Calculate weighted Cross-Entropy loss for batch class predictions.
 
     Parameters
     ----------
     target : tf.Tensor
-        Target masks in batch of shape [#Objects, H * W].
+        Ordered target class labels of shape [Batch Size, #Queries, 1]
     output : tf.Tensor
-        Predicted masks in batch of shape [#Objects, H * W].
+        Output class predictions of shape [Batch Size, #Queries, #Classes + 1]
+    sample_weight : None, optional
+        Sample weight tensor of shape [Batch Size, #Queries].
+        If provided, scales the loss of each query by the corresponding weight entry.
 
     Returns
     -------
-    float
-        Dice loss averaged by the number of objects in batch.
+    tf.Tensor[float]
+        Cross-Entropy loss averaged by the number queries in the batch.
+    """
+    cross_entropy = tfl.SparseCategoricalCrossentropy()
+    return cross_entropy(target, output, sample_weight)
+
+
+def calculate_l1_loss(target: tf.Tensor, output: tf.Tensor):
+    """Calculate L1 loss for batch bounding box predictions.
+
+    Parameters
+    ----------
+    target : tf.Tensor
+        Ordered target bounding boxes of shape [#Objects ,4]
+    output : tf.Tensor
+        Ordered output bounding boxes of shape [#Objects ,4]
+
+    Returns
+    -------
+    tf.Tensor[float]
+        L1 loss averaged by the number of objects in the batch.
+    """
+    l1_loss = tf.reduce_sum(tf.math.abs(target - output), axis=1)
+    return tf.reduce_mean(l1_loss)
+
+
+def calculate_giou_loss(target: tf.Tensor, output: tf.Tensor):
+    """Calculate generatlized IoU loss for batch bounding box predictions.
+
+    Parameters
+    ----------
+    target : tf.Tensor
+        Ordered target bounding boxes of shape [#Objects ,4]
+    output : tf.Tensor
+        Ordered output bounding boxes of shape [#Objects ,4]
+
+    Returns
+    -------
+    tf.Tensor[float]
+        GIoU loss averaged by the number of objects in the batch.
+    """
+    giou_loss = 1 - tfa.losses.giou_loss(
+        y_true=box_x1y1wh_to_yxyx(target), y_pred=box_x1y1wh_to_yxyx(output)
+    )
+    return tf.reduce_mean(giou_loss)
+
+
+def calculate_dice_loss(target: tf.Tensor, output: tf.Tensor):
+    """Calculate dice loss for batch segmentation mask predictions.
+
+    Parameters
+    ----------
+    target : tf.Tensor
+        Ordered target masks in batch of shape [#Objects, H * W].
+    output : tf.Tensor
+        Ordered output segmentation masks in batch of shape [#Objects, H * W].
+
+    Returns
+    -------
+    tf.Tensor[float]
+        Dice loss averaged by the number of objects in the batch.
     """
     numerator = 2 * tf.reduce_sum(output * target, axis=1)
     denominator = tf.reduce_sum(target, axis=1) + tf.reduce_sum(output, axis=1)
@@ -169,18 +207,19 @@ def calculate_dice_loss(target: tf.Tensor, output: tf.Tensor):
     return tf.reduce_mean(dice_loss)
 
 
-@tf.function
 def calculate_focal_loss(
     target: tf.Tensor, output: tf.Tensor, alpha: float = 0.25, gamma: float = 2.0
 ):
-    """Calculate focal loss as introduced in https://arxiv.org/pdf/1708.02002.pdf.
+    """Calculate focal loss for batch segmentation mask predictions.
+
+    Focal loss follows the proposal in https://arxiv.org/pdf/1708.02002.pdf.
 
     Parameters
     ----------
     target : tf.Tensor
-        Target masks in batch of shape [#Objects, H * W].
+        Ordered target masks in batch of shape [#Objects, H * W].
     output : tf.Tensor
-        Predicted masks in batch of shape [#Objects, H * W].
+        Ordered output segmentation masks in batch of shape [#Objects, H * W].
     alpha : float, optional
         Weighting factor to balance positive and negative examples.
     gamma : float, optional
@@ -188,8 +227,8 @@ def calculate_focal_loss(
 
     Returns
     -------
-    TYPE
-        Description
+    tf.Tensor[float]
+        Focal loss averaged by the number of objects in the batch.
     """
     bce = K.binary_crossentropy(target, output)
     p_t = output * target + (1 - output) * (1 - target)

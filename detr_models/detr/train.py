@@ -4,10 +4,9 @@ import ipdb  # noqa: F401
 import tensorflow as tf
 from detr_models.detr.matcher import bipartite_matching
 from detr_models.detr.losses import (
-    bbox_loss,
-    score_loss,
-    calculate_dice_loss,
-    calculate_focal_loss,
+    calculate_cls_loss,
+    calculate_bbox_loss,
+    calculate_mask_loss,
 )
 
 
@@ -52,12 +51,12 @@ def train_base_model(
             detr_scores, detr_bbox, batch_cls, batch_bbox, obj_indices
         )
 
-        score_loss = tf.constant(10.0) * calculate_score_loss(
-            batch_cls, detr_scores, indices
-        )
-        bbox_loss = calculate_bbox_loss(batch_bbox, detr_bbox, indices)
+        cls_loss = calculate_cls_loss(batch_cls, detr_scores, indices)
 
-        detr_loss = score_loss + bbox_loss
+        l1_loss, giou_loss = calculate_bbox_loss(batch_bbox, detr_bbox, indices)
+        bbox_loss = tf.constant(5.0) * l1_loss + tf.constant(2.0) * giou_loss
+
+        detr_loss = cls_loss + bbox_loss
 
         gradients = gradient_tape.gradient(detr_loss, detr.trainable_variables)
         gradients = [
@@ -65,7 +64,9 @@ def train_base_model(
         ]
         optimizer.apply_gradients(zip(gradients, detr.trainable_variables))
 
-    return [detr_loss, score_loss, bbox_loss]
+    mask_loss = tf.constant(0.0)
+
+    return [detr_loss, cls_loss, bbox_loss, mask_loss]
 
 
 @tf.function
@@ -110,14 +111,15 @@ def train_segmentation_model(
             detr_scores, detr_bbox, batch_cls, batch_bbox, obj_indices
         )
 
-        score_loss = tf.constant(10.0) * calculate_score_loss(
-            batch_cls, detr_scores, indices
-        )
-        bbox_loss = calculate_bbox_loss(batch_bbox, detr_bbox, indices)
+        cls_loss = calculate_cls_loss(batch_cls, detr_scores, indices)
+        ipdb.set_trace()
+        l1_loss, giou_loss = calculate_bbox_loss(batch_bbox, detr_bbox, indices)
+        bbox_loss = tf.constant(5.0) * l1_loss + tf.constant(2.0) * giou_loss
 
-        mask_loss = calculate_mask_loss(batch_masks, detr_masks, indices)
+        dice_loss, focal_loss = calculate_mask_loss(batch_masks, detr_masks, indices)
+        mask_loss = dice_loss + focal_loss
 
-        detr_loss = score_loss + bbox_loss + mask_loss
+        detr_loss = cls_loss + bbox_loss + mask_loss
 
         gradients = gradient_tape.gradient(detr_loss, detr.trainable_variables)
         gradients = [
@@ -125,100 +127,4 @@ def train_segmentation_model(
         ]
         optimizer.apply_gradients(zip(gradients, detr.trainable_variables))
 
-    return [detr_loss, score_loss, bbox_loss]
-
-
-def calculate_score_loss(batch_cls, detr_scores, indices):
-    """Helper function to calculate the score loss.
-
-    Parameters
-    ----------
-    batch_cls : tf.Tensor
-        Batch class targets of shape [Batch Size, #Queries, 1].
-    detr_scores : tf.Tensor
-        Batch detr score outputs of shape [Batch Size. #Queries, #Classes + 1].
-    indices : tf.Tensor
-        Bipartite matching indices of shape [Batch Size, 2, max_obj].
-        Indicating the assignement between queries and objects in each sample. Note that `max_obj` is
-        specified in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
-
-    Returns
-    -------
-    tf.Tensor
-        Average batch score loss.
-    """
-    batch_score_loss = tf.map_fn(
-        lambda el: score_loss(*el),
-        elems=[batch_cls, detr_scores, indices],
-        dtype=tf.float32,
-    )
-    return tf.reduce_mean(batch_score_loss)
-
-
-def calculate_bbox_loss(batch_bbox, detr_bbox, indices):
-    """Helper function to calculate the bounding box loss.
-
-    Parameters
-    ----------
-    batch_bbox : tf.Tensor
-        Batch bounding box targets of shape [Batch Size, #Queries, 4].
-    detr_bbox : tf.Tensor
-        Batch detr bounding box outputs of shape [Batch Size. #Queries, 4].
-    indices : tf.Tensor
-        Bipartite matching indices of shape [Batch Size, 2, max_obj].
-        Indicating the assignement between queries and objects in each sample. Note that `max_obj` is
-        specified in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
-
-    Returns
-    -------
-    tf.Tensor
-        Average batch bounding box loss
-    """
-
-    batch_bbox_loss = tf.map_fn(
-        lambda el: bbox_loss(*el),
-        elems=[batch_bbox, detr_bbox, indices],
-        dtype=tf.float32,
-    )
-    return tf.reduce_mean(batch_bbox_loss)
-
-
-def calculate_mask_loss(batch_masks, detr_masks, indices):
-    """Calculate batch segmentation mask loss.
-
-    Parameters
-    ----------
-    batch_masks : tf.Tensor
-        Batch mask targets of shape [Batch Size, #Objects, H, W].
-    detr_masks : tf.Tensor
-        Batch detr mask outputs of shape [Batch Size, #Queries, H_1, W_1], where
-            `H_1` and `W_1` are the shapes of the first feature map coming from
-            the ResNet50 network.
-    indices : tf.Tensor
-        Bipartite matching indices of shape [Batch Size, 2, max_obj].
-        Indicating the assignement between queries and objects in each sample. Note that `max_obj` is
-        specified in `tf_linear_sum_assignment` and the tensor is padded with `-1`.
-
-    Returns
-    -------
-    tf.Tensor
-        Average batch mask loss.
-    """
-    query_idx = tf.where(tf.math.not_equal(indices[:, 0], -1))
-    output = tf.gather_nd(detr_masks, query_idx)
-
-    object_idx = tf.where(tf.math.not_equal(indices[:, 1], -1))
-    target = tf.gather_nd(batch_masks, object_idx).to_tensor()
-
-    output = tf.expand_dims(output, axis=-1)
-    output = tf.image.resize(output, size=tf.shape(target)[-2::], method="nearest")
-    output = tf.squeeze(output)
-
-    target = tf.reshape(target, shape=(tf.shape(target)[0], -1))
-    output = tf.reshape(output, shape=(tf.shape(output)[0], -1))
-
-    dice_loss = calculate_dice_loss(target, output)
-    focal_loss = calculate_focal_loss(target, output)
-
-    mask_loss = dice_loss + focal_loss
-    return mask_loss
+    return [detr_loss, cls_loss, bbox_loss, mask_loss]
