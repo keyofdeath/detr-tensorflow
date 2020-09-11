@@ -90,19 +90,24 @@ class COCOFeeder:
                 continue
 
             if verbose:
-                print("Read Batch Imgs: {}".format(batch_image_ids))
-                print("Batch Images Input Shape:{}".format(input_data[0].shape))
-                print("Batch Class Labels Input Shape:{}".format(input_data[1].shape))
                 print(
-                    "Batch Class Bounding Boxes Input Shape:{}".format(
-                        input_data[2].shape
+                    "\n-- Compute Batch {} of {}:".format(
+                        batch_iteration + 1, len(image_ids)
                     )
                 )
-                print("Object IDs matching to Image ID: {}".format(input_data[3]))
+                print("   --------------------------")
+                print("-- Read Batch Imgs: {}".format(batch_image_ids))
+                print("-- Batch Images Input Shape:{}".format(input_data[0].shape))
+                print(
+                    "-- Batch Class Labels Input Shape:{}".format(input_data[1].shape)
+                )
+                print(
+                    "-- Batch Bounding Box Input Shape:{}".format(input_data[2].shape)
+                )
+            else:
+                progress_bar(total=len(image_ids), current=batch_iteration + 1)
 
             yield input_data
-
-            progress_bar(total=len(image_ids), current=batch_iteration + 1)
 
     def prepare_inputs(self, coco: object, batch_image_ids: list):
         """Prepare input data for DETR.
