@@ -68,7 +68,7 @@ def train_base_model(
     return [detr_loss, score_loss, bbox_loss]
 
 
-# @tf.function
+@tf.function
 def train_segmentation_model(
     detr,
     optimizer,

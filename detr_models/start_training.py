@@ -166,6 +166,7 @@ if __name__ == "__main__":
         "batch_size": args.batch_size,
         "epochs": args.epochs,
         "train_masks": args.train_masks,
+        "use_pretrained": args.use_pretrained,
         "use_gpu": args.use_gpu,
         "verbose": args.verbose,
     }
