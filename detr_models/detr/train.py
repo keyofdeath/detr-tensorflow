@@ -94,6 +94,8 @@ def train_segmentation_model(
         Batch class targets of shape [Batch Size, #Queries, 1].
     batch_bbox : tf.Tensor
         Batch bounding box targets of shape [Batch Size, #Queries, 4].
+    batch_masks : tf.Tensor
+        Batch segmentation masks of shape [Batch size, #Objects, H, W]
     obj_indices : tf.RaggedTensor
         Helper tensor of shape [Batch Size, None].
         Used to link objects in the cost matrix to the target tensors.
