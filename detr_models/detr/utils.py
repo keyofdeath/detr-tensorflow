@@ -208,6 +208,40 @@ def get_decay_schedules(num_steps: int, lr: float, drops: list, weight_decay: fl
     return lr_schedule, wd_schedule
 
 
+def extract_ordering_idx(idx_slice: tf.Tensor):
+    """Extract the correct ordering indices.
+
+    We need this helper function as we cannot filter directly over the indices, but need to
+    first filter for the position where the indices are stored and than extract this position
+    and reshape to match the filter conditions of `tf.gather_nd()`:
+
+        [[#Sample, Pos1], [#Sample, Pos2], ... ]
+
+    Parameters
+    ----------
+    idx_slice : tf.Tensor
+        Sliced indices of shape [Batch Size, #Queries].
+        The slice corresponds either to the matching query or object indices.
+
+    Returns
+    -------
+    ordered_idx: tf.Tensor
+        Ordered indices of shape [Batch Size, #Objects] following the logic as described
+        above.
+    """
+    idx = tf.where(tf.math.not_equal(idx_slice, -1))
+    ordered_idx = tf.gather_nd(idx_slice, idx)
+    ordered_idx = tf.transpose(tf.stack([idx[:, 0], ordered_idx]))
+    return ordered_idx
+
+
+def hms_string(sec_elapsed):
+    h = int(sec_elapsed / (60 * 60))
+    m = int((sec_elapsed % (60 * 60)) / 60)
+    s = sec_elapsed % 60.0
+    return "{}:{:>02}:{:>05.2f}".format(h, m, s)
+
+
 def progress_bar(total: int, current: int):
     """Helper function to plot progress bar."""
     percentage = int((current / total) * 100)
@@ -219,4 +253,8 @@ def progress_bar(total: int, current: int):
             pstr = "{}{}".format(pstr, "-")
 
         pstr = "{} {}%".format(pstr, percentage)
+
+        if percentage == 100:
+            pstr = pstr + "\n"
+
         print(pstr, end="\r", flush=True)
