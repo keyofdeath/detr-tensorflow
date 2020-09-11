@@ -9,7 +9,11 @@ import tensorflow as tf
 
 from detr_models.backbone.backbone import Backbone
 from detr_models.transformer.transformer import Transformer
-from detr_models.detr.utils import create_positional_encodings, save_training_loss
+from detr_models.detr.utils import (
+    create_positional_encodings,
+    save_training_loss,
+    hms_string,
+)
 from detr_models.detr.train import train_base_model, train_segmentation_model
 
 from detr_models.transformer.attention import MultiHeadAttentionMap
@@ -187,13 +191,13 @@ class DETR:
             Final training loss.
         """
         print(
-            "\nStart Training - Total of {} Epochs:\n".format(
-                training_config["epochs"]
-            ),
-            flush=True,
+            "\nStart Training - Total of {} Epochs:".format(training_config["epochs"])
         )
+        print("-------------------------------------------\n")
 
         detr_loss = []
+
+        epoch_loss = np.array([0.0, 0.0, 0.0, 0.0])
 
         positional_encodings = create_positional_encodings(
             fm_shape=self.fm_shape,
@@ -208,9 +212,8 @@ class DETR:
 
         for epoch in range(training_config["epochs"]):
             start = time.time()
-            print("-------------------------------------------", flush=True)
-            print(f"Epoch: {epoch+1}\n", flush=True)
-            epoch_loss = np.array([0.0, 0.0, 0.0])
+            print("Epoch {} - Loss:".format(epoch + 1))
+
             batch_iteration = 0
 
             # Iterate over all batches
@@ -241,9 +244,10 @@ class DETR:
                 batch_loss = np.array([loss.numpy() for loss in batch_loss])
 
                 if training_config["verbose"]:
-                    print("\nDETR Batch Loss: {:.3f}".format(batch_loss[0]))
-                    print("Cls. Batch Loss: {:.3f}".format(batch_loss[1]))
-                    print("Bounding Box Batch Loss: {:.3f}\n".format(batch_loss[2]))
+                    print("-- DETR Batch Loss: {:.3f}".format(batch_loss[0]))
+                    print("-- Cls. Batch Loss: {:.3f}".format(batch_loss[1]))
+                    print("-- Bounding Box Batch Loss: {:.3f}".format(batch_loss[2]))
+                    print("-- Mask Batch Loss: {:.3f}\n".format(batch_loss[3]))
 
                 epoch_loss = epoch_loss + batch_loss
 
@@ -255,9 +259,9 @@ class DETR:
             print("DETR Loss: {:.3f}".format(epoch_loss[0]), flush=True)
             print("Class Loss: {:.3f}".format(epoch_loss[1]), flush=True)
             print("Bounding Box Loss: {:.3f}".format(epoch_loss[2]), flush=True)
-
-            print(f"Time for epoch {epoch + 1} is {time.time()-start} sec", flush=True)
-            print("-------------------------------------------\n", flush=True)
+            print("Mask Loss: {:.3f}".format(epoch_loss[3]), flush=True)
+            print("Time for epoch: {}".format(hms_string(time.time() - start)))
+            print("-------------------------------------------\n")
 
         print("Finalize Training\n", flush=True)
 
