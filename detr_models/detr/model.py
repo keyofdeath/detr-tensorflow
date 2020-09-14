@@ -97,7 +97,7 @@ class DETR:
         )
 
         self.cls_head = tf.keras.layers.Dense(
-            units=self.num_classes + 1, activation="softmax", name="cls_head"
+            units=self.num_classes + 1, name="cls_head"
         )
 
         self.bbox_head = tf.keras.layers.Dense(

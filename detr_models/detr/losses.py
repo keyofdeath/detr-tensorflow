@@ -140,7 +140,7 @@ def calculate_ce_loss(target: tf.Tensor, output: tf.Tensor, sample_weight=None):
     tf.Tensor[float]
         Cross-Entropy loss averaged by the number queries in the batch.
     """
-    cross_entropy = tfl.SparseCategoricalCrossentropy()
+    cross_entropy = tfl.SparseCategoricalCrossentropy(from_logits=True)
     return cross_entropy(target, output, sample_weight)
 
 
