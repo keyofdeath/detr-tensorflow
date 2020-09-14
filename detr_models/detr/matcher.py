@@ -151,7 +151,7 @@ def prepare_cost_matrix(
 
     # GIoU Loss
     giou_loss = tfa.losses.GIoULoss(reduction=tf.keras.losses.Reduction.NONE)
-    cost_iou = -giou_loss(y_true=obj_bboxes_yxyx, y_pred=out_bbox_yxyx)
+    cost_iou = giou_loss(y_true=obj_bboxes_yxyx, y_pred=out_bbox_yxyx)
     cost_iou = tf.reshape(cost_iou, shape=[batch_size * num_queries, num_objects])
 
     cost_bbox = l1_cost_factor * cost_l1 + iou_cost_factor * cost_iou

@@ -178,7 +178,7 @@ def calculate_giou_loss(target: tf.Tensor, output: tf.Tensor):
     tf.Tensor[float]
         GIoU loss averaged by the number of objects in the batch.
     """
-    giou_loss = 1 - tfa.losses.giou_loss(
+    giou_loss = tfa.losses.giou_loss(
         y_true=box_x1y1wh_to_yxyx(target), y_pred=box_x1y1wh_to_yxyx(output)
     )
     return tf.reduce_mean(giou_loss)
