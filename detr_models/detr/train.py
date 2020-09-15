@@ -54,7 +54,7 @@ def train_base_model(
         cls_loss = calculate_cls_loss(batch_cls, detr_scores, indices)
 
         l1_loss, giou_loss = calculate_bbox_loss(batch_bbox, detr_bbox, indices)
-        bbox_loss = tf.constant(5.0) * l1_loss + tf.constant(2.0) * giou_loss
+        bbox_loss = tf.constant(1.0) * l1_loss + tf.constant(1.0) * giou_loss
 
         detr_loss = cls_loss + bbox_loss
 
@@ -116,7 +116,7 @@ def train_segmentation_model(
         cls_loss = calculate_cls_loss(batch_cls, detr_scores, indices)
         ipdb.set_trace()
         l1_loss, giou_loss = calculate_bbox_loss(batch_bbox, detr_bbox, indices)
-        bbox_loss = tf.constant(5.0) * l1_loss + tf.constant(2.0) * giou_loss
+        bbox_loss = tf.constant(1.0) * l1_loss + tf.constant(1.0) * giou_loss
 
         dice_loss, focal_loss = calculate_mask_loss(batch_masks, detr_masks, indices)
         mask_loss = dice_loss + focal_loss
