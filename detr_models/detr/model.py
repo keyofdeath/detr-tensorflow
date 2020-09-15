@@ -78,19 +78,16 @@ class DETR:
             dim_transformer,
         )
 
-    def build_model(self):
-        """Build Detection Transformer (DETR) model.
-
-        Returns
-        -------
-        tf.Model
-            Detection Transformer (DETR) model
+    def build_body(self):
         """
-        batch_input = tf.keras.layers.Input(shape=self.input_shape, name="Batch_Input")
-        positional_encodings = tf.keras.layers.Input(
+
+        """
+        return_obj = type("Return", (object, ), {})()
+        return_obj.batch_input = tf.keras.layers.Input(shape=self.input_shape, name="Batch_Input")
+        return_obj.positional_encodings = tf.keras.layers.Input(
             shape=self.positional_encodings_shape, name="Positional_Encodings_Input"
         )
-        feature_map = self.backbone(batch_input)
+        feature_map = self.backbone(return_obj.batch_input)
 
         # Set backbone learning rate order of magnitude smaller
         feature_map = (1 / 10) * feature_map + (1 - 1 / 10) * tf.stop_gradient(
@@ -130,23 +127,50 @@ class DETR:
             self.dim_feedforward,
         )
 
-        transformer_output = transformer(
+        return_obj.transformer_output = transformer(
             inp=transformer_input,
-            positional_encodings=positional_encodings,
+            positional_encodings=return_obj.positional_encodings,
             query_pos=query_embedding,
         )
 
-        cls_pred = tf.keras.layers.Dense(
+        return_obj.cls_pred = tf.keras.layers.Dense(
             units=self.num_classes + 1, activation="softmax"
-        )(transformer_output)
+        )(return_obj.transformer_output)
+
+        return return_obj
+
+    def build_classifier_model(self):
+        """Build Detection Transformer (DETR) model.
+
+        Returns
+        -------
+        tf.Model
+            Detection Transformer (DETR) model
+        """
+        # Only one query single image
+        # @todo voire si il faut faire ca
+        self.num_queries = 1
+        body = self.build_body()
+
+        return Model([body.batch_input, body.positional_encodings], body.cls_pred, name="DETR-Classifier")
+
+    def build_model(self):
+        """Build Detection Transformer (DETR) model.
+
+        Returns
+        -------
+        tf.Model
+            Detection Transformer (DETR) model
+        """
+        body = self.build_body()
 
         bbox_pred = tf.keras.layers.Dense(units=4, activation="sigmoid")(
-            transformer_output
+            body.transformer_output
         )
 
-        output_tensor = [cls_pred, bbox_pred]
+        output_tensor = [body.cls_pred, bbox_pred]
 
-        return Model([batch_input, positional_encodings], output_tensor, name="DETR")
+        return Model([body.batch_input, body.positional_encodings], output_tensor, name="DETR")
 
     def train(self, training_config, optimizer, count_images, data_feeder):
         """Train the DETR Model.
