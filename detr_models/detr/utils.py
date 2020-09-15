@@ -226,8 +226,8 @@ def extract_ordering_idx(idx_slice: tf.Tensor):
     Returns
     -------
     ordered_idx: tf.Tensor
-        Ordered indices of shape [Batch Size, #Objects] following the logic as described
-        above.
+        Ordered indices of shape [#Objects, 2], where the latter dimension corresponds to
+        sample and query position.
     """
     idx = tf.where(tf.math.not_equal(idx_slice, -1))
     ordered_idx = tf.gather_nd(idx_slice, idx)
