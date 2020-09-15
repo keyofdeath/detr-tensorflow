@@ -14,8 +14,8 @@ class DefaultDETRConfig:
 
         # Transformer Config
         self.dim_transformer = 256
-        self.dim_feedforward = 512
-        self.num_transformer_layer = 2
+        self.dim_feedforward = 2048
+        self.num_transformer_layer = 6
         self.num_heads = 8
 
         # Training Config
