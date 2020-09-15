@@ -197,8 +197,6 @@ class DETR:
 
         detr_loss = []
 
-        epoch_loss = np.array([0.0, 0.0, 0.0, 0.0])
-
         positional_encodings = create_positional_encodings(
             fm_shape=self.fm_shape,
             num_pos_feats=self.dim_transformer // 2,
@@ -215,6 +213,7 @@ class DETR:
             print("Epoch {} - Loss:".format(epoch + 1))
 
             batch_iteration = 0
+            epoch_loss = np.array([0.0, 0.0, 0.0, 0.0])
 
             # Iterate over all batches
             for input_data in data_feeder(training_config["verbose"]):
@@ -253,7 +252,6 @@ class DETR:
 
                 batch_iteration += 1
 
-            epoch_loss = (1 / batch_iteration) * epoch_loss
             detr_loss.append(epoch_loss)
 
             print("DETR Loss: {:.3f}".format(epoch_loss[0]), flush=True)
