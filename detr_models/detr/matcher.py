@@ -3,12 +3,10 @@
 import ipdb  # noqa: F401
 import tensorflow as tf
 import tensorflow_addons as tfa
-from detr_models.detr.config import DefaultDETRConfig
 from detr_models.detr.utils import box_x1y1wh_to_yxyx
 from scipy.optimize import linear_sum_assignment
 
 
-@tf.function
 def tf_linear_sum_assignment(sample_cost_matrix, obj_indices, max_obj=tf.constant(30)):
     """Compute the bipartite linear sum assignment offered by scipy.
 
@@ -61,14 +59,13 @@ def tf_linear_sum_assignment(sample_cost_matrix, obj_indices, max_obj=tf.constan
     )
 
 
-@tf.function
 def prepare_cost_matrix(
     detr_scores,
     detr_bbox,
     batch_cls,
     batch_bbox,
-    l1_cost_factor=tf.constant(5.0, dtype=tf.float32),
-    iou_cost_factor=tf.constant(2.0, dtype=tf.float32),
+    l1_cost_factor=tf.constant(1.0, dtype=tf.float32),
+    iou_cost_factor=tf.constant(1.0, dtype=tf.float32),
 ):
     """Calculate the cost matrix of the given model outputs, required for the bipartite
     assignment between queries and objects.
@@ -95,11 +92,9 @@ def prepare_cost_matrix(
         Note that the number of objects refers to the objects inside the batch. For the bipartite assignment,
         these get sliced to match only the considered sample.
     """
-    config = DefaultDETRConfig()
     batch_size = tf.shape(detr_scores)[0]
-    num_queries = config.num_queries
-    no_object_class = config.num_classes
-    num_classes = config.num_classes + 1
+    _, num_queries, num_classes = detr_scores.shape
+    no_object_class = num_classes - 1
 
     # Prepare Outputs
     # [BS * #Queries , #Cls]
@@ -179,6 +174,9 @@ def bipartite_matching(detr_scores, detr_bbox, batch_cls, batch_bbox, obj_indice
         Batch class targets of shape [Batch Size, #Queries, 1].
     batch_bbox : tf.Tensor
         Batch bounding box targets of shape [Batch Size, #Queries, 4].
+    obj_indices : tf.RaggedTensor
+        Helper tensor of shape [Batch Size, None].
+        Used to link objects in the cost matrix to the target tensors.
 
     Returns
     -------
@@ -188,7 +186,6 @@ def bipartite_matching(detr_scores, detr_bbox, batch_cls, batch_bbox, obj_indice
         The second dimension corresponds to Query_IDX, Object_IDX of the corresponding batch. For each sample,
         the indices got padded with `-1` to match `max_obj` in order to constitute a regular tensor.
     """
-
     cost_matrix = prepare_cost_matrix(detr_scores, detr_bbox, batch_cls, batch_bbox)
 
     batch_idx = tf.map_fn(
