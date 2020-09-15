@@ -2,7 +2,6 @@
 # Ignoring flake8 error code F401
 import io
 import os
-import random
 from contextlib import redirect_stdout
 
 import ipdb  # noqa: F401
@@ -55,6 +54,7 @@ class COCOFeeder:
 
         self.image_height = image_height
         self.image_width = image_width
+        np.random.seed(30041994)
 
     def __call__(self, verbose: bool):
         """Yield batch input for DETR model.
@@ -79,8 +79,8 @@ class COCOFeeder:
         image_ids = coco.getImgIds()
 
         image_ids = slize_batches(image_ids, self.batch_size)
-        # Each  Iteration consists of k=1000 steps
-        image_ids = random.choices(image_ids, k=1000)
+
+        np.random.shuffle(image_ids)
 
         for batch_iteration, batch_image_ids in enumerate(image_ids):
             try:
