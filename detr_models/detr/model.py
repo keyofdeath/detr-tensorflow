@@ -1,3 +1,4 @@
+import os
 import time
 import warnings
 
@@ -6,12 +7,13 @@ import warnings
 import ipdb  # noqa: F401
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras import Model
+
 from detr_models.backbone.backbone import Backbone
 from detr_models.detr.losses import bbox_loss, score_loss
 from detr_models.detr.matcher import bipartite_matching
 from detr_models.detr.utils import create_positional_encodings, save_training_loss
 from detr_models.transformer.transformer import Transformer
-from tensorflow.keras import Model
 
 warnings.filterwarnings("ignore")
 
@@ -20,17 +22,17 @@ tf.keras.backend.set_floatx("float32")
 
 class DETR:
     def __init__(
-        self,
-        input_shape,
-        num_queries,
-        num_classes,
-        num_heads,
-        dim_transformer,
-        dim_feedforward,
-        num_transformer_layer,
-        backbone_name,
-        backbone_config,
-        train_backbone=False,
+            self,
+            input_shape,
+            num_queries,
+            num_classes,
+            num_heads,
+            dim_transformer,
+            dim_feedforward,
+            num_transformer_layer,
+            backbone_name,
+            backbone_config,
+            train_backbone=False,
     ):
         """Initialize Detection Transformer (DETR) network.
 
@@ -82,7 +84,7 @@ class DETR:
         """
 
         """
-        return_obj = type("Return", (object, ), {})()
+        return_obj = type("Return", (object,), {})()
         return_obj.batch_input = tf.keras.layers.Input(shape=self.input_shape, name="Batch_Input")
         return_obj.positional_encodings = tf.keras.layers.Input(
             shape=self.positional_encodings_shape, name="Positional_Encodings_Input"
@@ -225,7 +227,7 @@ class DETR:
         for epoch in range(training_config["epochs"]):
             start = time.time()
             print("-------------------------------------------", flush=True)
-            print(f"Epoch: {epoch+1}\n", flush=True)
+            print(f"Epoch: {epoch + 1}\n", flush=True)
             epoch_loss = np.array([0.0, 0.0, 0.0])
             batch_iteration = 0
 
@@ -260,7 +262,7 @@ class DETR:
             print("Class Loss: {:.3f}".format(epoch_loss[1]), flush=True)
             print("Bounding Box Loss: {:.3f}".format(epoch_loss[2]), flush=True)
 
-            print(f"Time for epoch {epoch + 1} is {time.time()-start} sec", flush=True)
+            print(f"Time for epoch {epoch + 1} is {time.time() - start} sec", flush=True)
             print("-------------------------------------------\n", flush=True)
 
         print("Finalize Training\n", flush=True)
@@ -273,16 +275,105 @@ class DETR:
 
         return detr_loss
 
+    def train_classifier(self, training_config, optimizer, loss_function, train_dataset):
+        """Train the DETR classifier Model.
+
+        Parameters
+        ----------
+        training_config : dict
+            Contains the training configuration:
+        optimizer : tf.Optimizer
+            Any chosen optimizer used for training.
+        loss_function : call
+            Loss function like SparseCategoricalCrossentropy
+        train_dataset : tf.dataset
+            Tensorflow dataset
+
+        Returns
+        -------
+        float
+            Final training loss.
+        """
+
+        print("-------------------------------------------", flush=True)
+        print("-------------------------------------------\n", flush=True)
+
+        if training_config["use_pretrained"]:
+            print(
+                "Load pre-trained model from: {}\n".format(
+                    training_config["use_pretrained"]
+                ),
+                flush=True,
+            )
+            model = tf.keras.models.load_model(training_config["use_pretrained"])
+        else:
+            print("Build classifier model from scratch\n", flush=True)
+            model = self.build_classifier_model()
+
+        print("-------------------------------------------\n", flush=True)
+        print(
+            "Start Training - Total of {} Epochs:\n".format(training_config["epochs"]),
+            flush=True,
+        )
+
+        detr_loss = []
+
+        positional_encodings = create_positional_encodings(
+            fm_shape=self.fm_shape,
+            num_pos_feats=self.dim_transformer // 2,
+            batch_size=training_config["batch_size"],
+        )
+
+        # Prepare the metrics.
+        train_loss_metric = tf.keras.metrics.Mean(name='train_loss')
+        train_accuracy_metric = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
+
+        for epoch in range(training_config["epochs"]):
+            print("-------------------------------------------", flush=True)
+            print(f"Epoch: {epoch + 1}\n", flush=True)
+            train_loss_metric.reset_states()
+            train_accuracy_metric.reset_states()
+            start = time.time()
+
+            # Iterate over all batches
+            for batch, (batch_inputs, batch_classes) in enumerate(train_dataset):
+                predictions, score_loss = _train_dert_classifier(
+                    detr=model,
+                    optimizer=optimizer,
+                    loss_function=loss_function,
+                    batch_inputs=batch_inputs,
+                    batch_classes=batch_classes,
+                    positional_encodings=positional_encodings,
+                )
+                detr_loss.append(score_loss)
+                train_loss_metric(score_loss)
+                train_accuracy_metric(batch_classes, predictions)
+
+                if training_config["verbose"]:
+                    print('Loss {:.4f} Accuracy {:.4f}\n'.format(train_loss_metric.result(),
+                                                                 train_accuracy_metric.result()))
+
+            print('Loss {:.4f} Accuracy {:.4f}\n'.format(train_loss_metric.result(), train_accuracy_metric.result()))
+            print(f"Time for epoch {epoch + 1} is {time.time() - start} sec", flush=True)
+            print("-------------------------------------------\n", flush=True)
+
+        print("Finalize Training\n", flush=True)
+
+        # Save training loss and model
+        model.save(os.path.join(training_config["output_dir"], "classifier_dert_model"))
+        save_training_loss(detr_loss, os.path.join(training_config["output_dir"], "classifier_dert_loss.txt"))
+        return detr_loss
+
 
 @tf.function
 def _train(
-    detr,
-    optimizer,
-    batch_inputs,
-    batch_cls,
-    batch_bbox,
-    obj_indices,
-    positional_encodings,
+        detr,
+        optimizer,
+        batch_inputs,
+        batch_cls,
+        batch_bbox,
+        obj_indices,
+        positional_encodings,
 ):
     """Train step of the DETR network.
 
@@ -329,6 +420,43 @@ def _train(
         optimizer.apply_gradients(zip(gradients, detr.trainable_variables))
 
     return [detr_loss, score_loss, bbox_loss]
+
+
+@tf.function
+def _train_dert_classifier(
+        detr_classifier,
+        optimizer,
+        loss_function,
+        batch_inputs,
+        batch_classes,
+        positional_encodings,
+):
+    """Train step of the DETR network.
+
+    Parameters
+    ----------
+    detr_classifier : tf.Model
+        Detection Transformer (DETR) Model.
+    optimizer : tf.Optimizer
+        Any chosen optimizer used for training.
+    batch_inputs : tf.Tensor
+        Batch input images of shape [Batch Size, H, W, C].
+    batch_classes : tf.Tensor
+        Batch class targets of shape [Batch Size, 1].
+    positional_encodings : tf.Tensor
+        Positional encodings of shape [Batch Size, H*W, dim_transformer].
+        Used in transformer network to enrich input information.
+    """
+    with tf.GradientTape() as gradient_tape:
+        predictions = detr_classifier(
+            [batch_inputs, positional_encodings], training=True
+        )
+        score_loss = loss_function(batch_classes, predictions)
+
+        gradients = gradient_tape.gradient(score_loss, detr_classifier.trainable_variables)
+        optimizer.apply_gradients(zip(gradients, detr_classifier.trainable_variables))
+
+    return [predictions, score_loss]
 
 
 def calculate_score_loss(batch_cls, detr_scores, indices):

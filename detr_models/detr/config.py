@@ -36,3 +36,34 @@ class DefaultDETRConfig:
         # Only Supporeted for `data_type` COCO
         self.image_height = 224
         self.image_width = 224
+
+
+class DefaultDETRClassifierConfig:
+    def __init__(self):
+        # Number of Classes in the dataset
+        # Please note that the actual numbering of the classes
+        # should start at zero e.g. 0, 1, 2, 3 in the default case.
+        self.num_classes = 10
+
+        # Transformer Config
+        self.dim_transformer = 256
+        self.dim_feedforward = 512
+        self.num_transformer_layer = 2
+        self.num_heads = 8
+
+        # Training Config
+        self.epochs = 300
+        self.batch_size = 64
+        self.learning_rate = 1e-4
+        self.drops = [100, 200]
+        self.decay = 1e-4
+
+        # Backbone Config
+        # MobileNetV2, ResNet50
+        self.backbone_name = "MobileNetV2"
+        self.train_backbone = True
+
+        # Height and Width of Image after rescaling
+        # Only Supporeted for `data_type` COCO
+        self.image_height = 224
+        self.image_width = 224

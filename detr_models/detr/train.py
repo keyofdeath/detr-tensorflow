@@ -5,11 +5,12 @@ import os
 import ipdb  # noqa: F401
 import tensorflow as tf
 import tensorflow_addons as tfa
+from tensorflow.keras.preprocessing.image import img_to_array, load_img
+
 from detr_models.data_feeder.coco_feeder import COCOFeeder
 from detr_models.data_feeder.pvoc_feeder import PVOCFeeder
 from detr_models.detr.config import DefaultDETRConfig
 from detr_models.detr.model import DETR
-from tensorflow.keras.preprocessing.image import img_to_array, load_img
 
 tf.keras.backend.set_floatx("float32")
 
