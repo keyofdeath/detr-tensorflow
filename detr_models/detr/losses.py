@@ -1,7 +1,7 @@
 # IPDB can be used for debugging.
 # Ignoring flake8 error code F401
 import ipdb  # noqa: F401
-import keras.backend as K
+import tensorflow.keras.backend as K
 import tensorflow as tf
 import tensorflow_addons as tfa
 from detr_models.detr.utils import box_x1y1wh_to_yxyx

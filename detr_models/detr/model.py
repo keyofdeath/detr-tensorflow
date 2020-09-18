@@ -119,7 +119,7 @@ class DETR:
             tf.expand_dims(query_pos, axis=0), repeats=batch_size, axis=0
         )
         query_embedding = tf.keras.layers.Embedding(
-            input_dim=self.num_queries, output_dim=self.dim_transformer
+            input_dim=self.num_queries, output_dim=self.dim_transformer, name="YOLO"
         )(query_pos)
 
         transformer = Transformer(
@@ -135,10 +135,6 @@ class DETR:
             query_pos=query_embedding,
         )
 
-        return_obj.cls_pred = tf.keras.layers.Dense(
-            units=self.num_classes + 1, activation="softmax"
-        )(return_obj.transformer_output)
-
         return return_obj
 
     def build_classifier_model(self):
@@ -150,11 +146,14 @@ class DETR:
             Detection Transformer (DETR) model
         """
         # Only one query single image
-        # @todo voire si il faut faire ca
-        self.num_queries = 1
+        self.num_queries = 2
         body = self.build_body()
 
-        return Model([body.batch_input, body.positional_encodings], body.cls_pred, name="DETR-Classifier")
+        head = tf.keras.layers.Flatten(name="Head-Flatten")(body.transformer_output)
+        cls_pred = tf.keras.layers.Dense(
+            units=self.num_classes, activation="softmax"
+        )(head)
+        return Model([body.batch_input, body.positional_encodings], cls_pred, name="DETR-Classifier")
 
     def build_model(self):
         """Build Detection Transformer (DETR) model.
@@ -170,7 +169,11 @@ class DETR:
             body.transformer_output
         )
 
-        output_tensor = [body.cls_pred, bbox_pred]
+        cls_pred = tf.keras.layers.Dense(
+            units=self.num_classes + 1, activation="softmax"
+        )(body.transformer_output)
+
+        output_tensor = [cls_pred, bbox_pred]
 
         return Model([body.batch_input, body.positional_encodings], output_tensor, name="DETR")
 
@@ -338,7 +341,7 @@ class DETR:
             # Iterate over all batches
             for batch, (batch_inputs, batch_classes) in enumerate(train_dataset):
                 predictions, score_loss = _train_dert_classifier(
-                    detr=model,
+                    detr_classifier=model,
                     optimizer=optimizer,
                     loss_function=loss_function,
                     batch_inputs=batch_inputs,
@@ -414,9 +417,6 @@ def _train(
         detr_loss = score_loss + bbox_loss
 
         gradients = gradient_tape.gradient(detr_loss, detr.trainable_variables)
-        gradients = [
-            tf.clip_by_norm(gradient, tf.constant(0.1)) for gradient in gradients
-        ]
         optimizer.apply_gradients(zip(gradients, detr.trainable_variables))
 
     return [detr_loss, score_loss, bbox_loss]
@@ -452,7 +452,6 @@ def _train_dert_classifier(
             [batch_inputs, positional_encodings], training=True
         )
         score_loss = loss_function(batch_classes, predictions)
-
         gradients = gradient_tape.gradient(score_loss, detr_classifier.trainable_variables)
         optimizer.apply_gradients(zip(gradients, detr_classifier.trainable_variables))
 
