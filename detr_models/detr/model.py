@@ -365,7 +365,7 @@ class DETR:
         # Save training loss and model
         model.save(os.path.join(training_config["output_dir"], "classifier_dert_model"))
         save_training_loss(detr_loss, os.path.join(training_config["output_dir"], "classifier_dert_loss.txt"))
-        return detr_loss
+        return model
 
 
 @tf.function
