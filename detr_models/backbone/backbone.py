@@ -36,16 +36,19 @@ class Backbone:
         elif backbone_name == "InceptionV3":
             self.model = tf.keras.applications.InceptionV3(**config)
 
+        keep = False
         # Remove Layers until Conv4
         for i, layer in enumerate(reversed(self.model.layers)):
             if backbone_name == "ResNet50" and layer._name == "conv4_block6_out":
-                break
+                keep = True
             elif (
                 backbone_name == "MobileNetV2" and layer._name == "block_13_expand_relu"
             ):
-                break
-            else:
+                keep = True
+            elif not keep:
                 self.model._layers.pop()
+            else:
+                layer.trainable = False
 
         self.model.layers[-1]._name = "feature_map"
 
