@@ -149,10 +149,9 @@ class DETR:
         self.num_queries = 2
         body = self.build_body()
 
-        head = tf.keras.layers.Flatten(name="Head-Flatten")(body.transformer_output)
         cls_pred = tf.keras.layers.Dense(
             units=self.num_classes, activation="softmax"
-        )(head)
+        )(body.transformer_output[:, 0, :])
         return Model([body.batch_input, body.positional_encodings], cls_pred, name="DETR-Classifier")
 
     def build_model(self):
@@ -452,8 +451,8 @@ def _train_dert_classifier(
             [batch_inputs, positional_encodings], training=True
         )
         score_loss = loss_function(batch_classes, predictions)
-        gradients = gradient_tape.gradient(score_loss, detr_classifier.trainable_variables)
-        optimizer.apply_gradients(zip(gradients, detr_classifier.trainable_variables))
+    gradients = gradient_tape.gradient(score_loss, detr_classifier.trainable_variables)
+    optimizer.apply_gradients(zip(gradients, detr_classifier.trainable_variables))
 
     return [predictions, score_loss]
 
