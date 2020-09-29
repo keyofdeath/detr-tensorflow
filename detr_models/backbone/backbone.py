@@ -41,10 +41,12 @@ class Backbone:
         for i, layer in enumerate(reversed(self.model.layers)):
             if backbone_name == "ResNet50" and layer._name == "conv4_block6_out":
                 keep = True
+                layer.trainable = False
             elif (
                 backbone_name == "MobileNetV2" and layer._name == "block_13_expand_relu"
             ):
                 keep = True
+                layer.trainable = False
             elif not keep:
                 self.model._layers.pop()
             else:
